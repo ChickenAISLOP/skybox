@@ -1,0 +1,9 @@
+# Keep everything LF. Lua tolerates CRLF, but pinning it avoids noisy diffs
+# and keeps the DDS/status parsing paths predictable across platforms.
+* text=auto eol=lf
+
+*.dds binary
+*.glb binary
+*.png binary
+*.jpg binary
+*.pyc binary

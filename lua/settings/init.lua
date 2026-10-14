@@ -1,0 +1,5 @@
+dofile(ModPath .. "lua/util.lua")
+dofile(ModPath .. "lua/core.lua")
+dofile(ModPath .. "lua/loader.lua")
+dofile(ModPath .. "lua/settings/core.lua")
+dofile(ModPath .. "lua/settings/menu.lua")

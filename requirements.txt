@@ -1,0 +1,13 @@
+# Dependencies for the in-game "Generate DDS from PNGs" button.
+# Only needed if you want to bake your own images. The nine skyboxes already
+# shipped in input/dds/generated/ were baked with this toolchain.
+#
+#   py -m pip install -r requirements.txt
+#
+# tools/bake_to_payday_sky_uv.py and tools/prepare_sky_panorama.py additionally
+# require Blender's `bpy` module and are offline authoring tools, not part of the
+# in-game generator.
+
+Pillow
+numpy
+quicktex

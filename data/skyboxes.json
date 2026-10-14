@@ -1,0 +1,41 @@
+{
+	"skyboxes": [
+		{ "id": "0", "name": "Violet Mandala" },
+		{ "id": "51", "name": "Rose Mandala" },
+		{ "id": "67", "name": "Electric Storm" },
+		{ "id": "girly", "name": "Portrait" },
+		{ "id": "nightsky", "name": "Night Sky Panorama" },
+		{ "id": "prototype", "name": "Night Horizon" },
+		{ "id": "sky", "name": "Violet Nebula" },
+		{ "id": "skyproto", "name": "Pixel Bloom" },
+		{ "id": "welcome", "name": "Glitch Storm" },
+
+		{ "id": "sky_0200_night_moon_stars", "name": "02:00 Night Moon Stars" },
+		{ "id": "sky_0902_overcast", "name": "09:02 Overcast" },
+		{ "id": "sky_0902_overcast_dark", "name": "09:02 Overcast Dark" },
+		{ "id": "sky_0927_whispy_clouds", "name": "09:27 Whispy Clouds" },
+		{ "id": "sky_1008_cloudy", "name": "10:08 Cloudy" },
+		{ "id": "sky_1044_overcast_sun", "name": "10:44 Overcast Sun" },
+		{ "id": "sky_1224_clear_sky", "name": "12:24 Clear Sky" },
+		{ "id": "sky_1313_cloudy", "name": "13:13 Cloudy" },
+		{ "id": "sky_1345_clear_sky", "name": "13:45 Clear Sky" },
+		{ "id": "sky_1345_clear_sky_mountain_01", "name": "13:45 Clear Sky Mountain" },
+		{ "id": "sky_1530_low_sun_clouds", "name": "15:30 Low Sun Clouds" },
+		{ "id": "sky_1830_low_sun_clouds", "name": "18:30 Low Sun Clouds" },
+		{ "id": "sky_1846_low_sun_nice_clouds", "name": "18:46 Low Sun Nice Clouds" },
+		{ "id": "sky_1930_sunset_heavy_clouds", "name": "19:30 Sunset Heavy Clouds" },
+		{ "id": "sky_1930_twillight", "name": "19:30 Twilight" },
+		{ "id": "sky_1931_low_sun", "name": "19:31 Low Sun" },
+		{ "id": "sky_1945_sunset", "name": "19:45 Sunset" },
+		{ "id": "sky_2003_dusk_blue", "name": "20:03 Dusk Blue" },
+		{ "id": "sky_2003_sunrise", "name": "20:03 Sunrise" },
+		{ "id": "sky_2100_moon", "name": "21:00 Moon" },
+		{ "id": "sky_2335_night_moon", "name": "23:35 Night Moon" },
+		{ "id": "sky_city_clear", "name": "City Clear" },
+		{ "id": "sky_city_clear_high", "name": "City Clear High" },
+		{ "id": "sky_cloudy_blue", "name": "Cloudy Blue" },
+		{ "id": "sky_csgo_de_bank_cs15_daylight02", "name": "CSGO Bank Daylight" },
+
+		{ "id": "default", "name": "Default" }
+	]
+}

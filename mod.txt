@@ -1,0 +1,17 @@
+{
+	"name": "skybox",
+	"description": "Custom skybox textures for PAYDAY 2 heists",
+	"author": "skybox",
+	"version": "1.0",
+	"blt_version": 2,
+	"hooks": [
+		{
+			"hook_id": "lib/managers/menumanager",
+			"script_path": "lua/settings/init.lua"
+		},
+		{
+			"hook_id": "lib/setups/gamesetup",
+			"script_path": "lua/environment_hook.lua"
+		}
+	]
+}
