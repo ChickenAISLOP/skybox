@@ -200,14 +200,4 @@ function SA:get_skybox_ids()
 	return ids
 end
 
--- Core update loop - called from GameSetupUpdate
-function SA.update(t, dt)
-	-- Callers use both SA.update() and SA:update(); keep this safe for either form.
-	if not SA.enabled or not SA.global_enabled then return end
-	
-	-- Update rotation and UV scrolling for active skybox
-	-- This would be applied to the environment's sky dome
-	-- Implementation depends on how the game handles skybox materials
-end
-
 SA:load_heist_config()

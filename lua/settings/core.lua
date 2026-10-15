@@ -67,7 +67,6 @@ function S:sync()
 	if SA then
 		SA.enabled = self.settings.enabled
 		SA.global_enabled = self.settings.global_enabled
-		if SA.update then SA.update() end
 	end
 end
 

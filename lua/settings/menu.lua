@@ -47,17 +47,6 @@ local function refresh_active_menu(menu_id)
 	end
 end
 
-local function do_reset(menu_id, keys)
-	for _, k in ipairs(keys) do
-		if S.defaults[k] ~= nil then
-			S.settings[k] = S.defaults[k]
-		end
-	end
-	S:sync()
-	S:save()
-	refresh_active_menu(menu_id)
-end
-
 Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_manager)
 	local function set(key, value, repaint)
 		S.settings[key] = value
@@ -126,10 +115,6 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 		local loader = _G.skybox_animated_loader
 		if loader then loader.rescan() end
 		refresh_heist_choices(MENU_HEIST)
-		DelayedCalls:Add("skybox_animated_rescan_apply", 0.5, function()
-			local SA = _G.skybox_animated
-			if SA and SA.update then SA.update() end
-		end)
 		QuickMenu:new(managers.localization:text("sa_rescan_title"), managers.localization:text("sa_rescan_done"), {}, true)
 	end
 	MenuCallbackHandler.sa_dump_diagnostics = function()
@@ -146,35 +131,6 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 	-- sky_probe_report.txt to the BLT save folder.
 
 	-- Read-only inspection of the environment swap API. No writes.
-
-	-- DISABLED - both swap routes access-violiated inside PackageManager:_script_data,
-	-- reached through BeardLib's FileManager:Process:46. Tried
-	-- managers.viewport:set_override_environment, then worlddefinition:_set_environment;
-	-- both faulted on a real environment load. Restarting the level is the only
-	-- way back, so the button is removed rather than hidden.
-	-- MenuCallbackHandler.sa_env_swap = function()
-	-- 	local m = _G.env_swap
-	-- 	if not (m and m.run) then
-	-- 		QuickMenu:new("Env swap", "env_swap_test.lua not loaded", {}, true)
-	-- 		return
-	-- 	end
-	-- 	QuickMenu:new("Env swap", "Swapping environment, watch the sky...", {}, true)
-	-- 	m.run()
-	-- 	QuickMenu:new("Env swap", "Done. It restores the game default environment after 2 seconds.", {}, true)
-	-- end
-		-- Read-only inspection of the sky rotation API. No writes.
-
-	-- Rotates the dome by +90 degrees, reads it back, then restores it.
-	MenuCallbackHandler.sa_skyrot_test = function()
-		local m = _G.skyrot
-		if not (m and m.run) then
-			QuickMenu:new("Sky rotation", "sky_rot_probe.lua not loaded", {}, true)
-			return
-		end
-		QuickMenu:new("Sky rotation", "Rotating +90 degrees, watch the sky...", {}, true)
-		m.run()
-		QuickMenu:new("Sky rotation", "Done. It restores itself in 4 seconds.", {}, true)
-	end
 
 	-- =========================================================================
 	-- Sky rotation driver: enable, and speed in degrees per second.
@@ -216,34 +172,6 @@ MenuCallbackHandler.sa_rot_toggle = function()
 	m.set_enabled(not m.enabled)
 	QuickMenu:new("Sky rotation", m.status(), {}, true)
 end
-
-	-- Read-only time series of the sky rotation across every active viewport.
-	-- Answers whether anything animates it while you stand still.
-
-	-- Read-only survey of the scrolling cloud materials on sky_1945_sunset_clouds.
-	MenuCallbackHandler.sa_cloud_inspect = function()
-		local m = _G.cloudprobe
-		if not (m and m.inspect) then
-			QuickMenu:new("Clouds", "cloud_probe.lua not loaded", {}, true)
-			return
-		end
-		m.inspect()
-		QuickMenu:new("Clouds", "Written to cloud_report.txt", {}, true)
-	end
-
-	-- Flips the x component of uv0_speed on the first cloud material that has
-	-- one, then restores it. Only reachable on a level using
-	-- sky_1945_sunset_clouds - it aborts anywhere else.
-	MenuCallbackHandler.sa_cloud_test = function()
-		local m = _G.cloudprobe
-		if not (m and m.run) then
-			QuickMenu:new("Clouds", "cloud_probe.lua not loaded", {}, true)
-			return
-		end
-		QuickMenu:new("Clouds", "Reversing cloud scroll, watch the sky...", {}, true)
-		m.run()
-		QuickMenu:new("Clouds", "Done. It restores itself after 1 second.", {}, true)
-	end
 
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
@@ -312,10 +240,6 @@ MenuCallbackHandler.sa_generate_dds_from_png = function()
 				local loader = _G.skybox_animated_loader
 				if loader then loader.rescan() end
 				refresh_heist_choices(MENU_HEIST)
-				DelayedCalls:Add("skybox_animated_python_generator_apply", 0.5, function()
-					local SA = _G.skybox_animated
-					if SA and SA.update then SA.update() end
-				end)
 				QuickMenu:new(managers.localization:text("sa_dds_generator_title"), managers.localization:text("sa_dds_generator_done") .. " " .. result, {}, true)
 			elseif result:match("^CANCELLED") then
 				-- Report the exact done/remaining split instead of a bare

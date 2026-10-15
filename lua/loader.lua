@@ -291,10 +291,6 @@ function L.activate()
 	L.ensure_scanned()
 end
 
-function L.deactivate()
-	L._active = false
-end
-
 Hooks:Add("GameSetupUpdate", "skybox_animated_activate_in_heist", function()
 	if L._active or not L.in_heist() then return end
 	L.activate()
