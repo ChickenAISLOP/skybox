@@ -6,16 +6,15 @@ if SA._core_loaded then
 end
 SA._core_loaded = true
 
+-- loader.lua already loaded
 SA.path = ModPath
 SA.enabled = SA.enabled ~= false
 SA.heist_skyboxes = SA.heist_skyboxes or {}
 SA.global_enabled = SA.global_enabled ~= false
 
--- Heist to skybox mapping, used only as a fallback when a heist has no saved
--- override. Every id here refers to a vanilla sky texture, so most of them will
--- not resolve unless the matching texture is present in input/dds; selected_
--- skybox() falls back to the global choice when a lookup misses.
+-- Heist to environment mapping (vanilla)
 SA.heist_environments = {
+	-- Vanilla heists mapped to their default skyboxes
 	arm_cro = "sky_city_clear",
 	arm_fac = "sky_city_clear",
 	arm_hcm = "sky_city_clear",
@@ -34,6 +33,7 @@ SA.heist_environments = {
 	cage = "sky_1846_low_sun_nice_clouds",
 	cane = "sky_1931_low_sun",
 	cas = "sky_1224_clear_sky",
+	cane = "sky_1931_low_sun",
 	crojob1 = "sky_1830_low_sun_clouds",
 	crojob2 = "sky_1830_low_sun_clouds",
 	crojob3 = "sky_1830_low_sun_clouds",
@@ -97,7 +97,9 @@ SA.heist_environments = {
 	haunted = "sky_1930_sunset_heavy_clouds",
 	chill_combat = "sky_1345_clear_sky",
 	pex = "sky_1345_clear_sky",
+	crojob2 = "sky_1830_low_sun_clouds",
 	sah = "sky_1345_clear_sky",
+	hvh = "sky_city_clear",
 	pent = "sky_1345_clear_sky",
 	ranc = "sky_1345_clear_sky",
 	brb = "sky_1345_clear_sky",
@@ -106,6 +108,7 @@ SA.heist_environments = {
 	nmh = "sky_1345_clear_sky",
 	sand = "sky_1345_clear_sky",
 	are = "sky_1345_clear_sky",
+	cane = "sky_1931_low_sun",
 	pbm = "sky_1345_clear_sky",
 	corp = "sky_1345_clear_sky",
 	deep = "sky_1345_clear_sky",
@@ -145,16 +148,18 @@ end
 function SA:get_current_heist_config(heist)
 	heist = heist or (Global.level_data and Global.level_data.level_id)
 	if not heist then return nil end
-
+	
 	-- Check if heist has custom config
 	if self.heist_skyboxes[heist] then
 		return self.heist_skyboxes[heist]
 	end
-
+	
 	-- Return default for this heist
 	local env_name = self.heist_environments[heist] or "sky_1345_clear_sky"
 	return {
 		skybox = env_name,
+		rotation = { x = 0, y = 0, z = 0 },
+		uv_scroll = { u = 0, v = 0 },
 		enabled = true,
 	}
 end
@@ -193,6 +198,16 @@ function SA:get_skybox_ids()
 		table.insert(ids, s.id)
 	end
 	return ids
+end
+
+-- Core update loop - called from GameSetupUpdate
+function SA.update(t, dt)
+	-- Callers use both SA.update() and SA:update(); keep this safe for either form.
+	if not SA.enabled or not SA.global_enabled then return end
+	
+	-- Update rotation and UV scrolling for active skybox
+	-- This would be applied to the environment's sky dome
+	-- Implementation depends on how the game handles skybox materials
 end
 
 SA:load_heist_config()

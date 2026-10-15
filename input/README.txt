@@ -1,68 +1,58 @@
-# Custom Skybox Textures
+# Custom Skybox Files
 
-Put source PNG images in `input/png/` (or `input/jpg/`). The in-game
-**Generate DDS from PNGs** button bakes them into `input/dds/generated/`.
-The game only ever reads `input/dds/`.
+- Put source PNG images in `input/png/`.
+- Other source JPEGs are kept separately in `input/jpg/` (the generator scans PNGs only).
+- Put game-ready DDS or PAYDAY `.texture` files in `input/dds/`.
+- The generator writes `input/dds/generated/<same-name>.dds`; these outputs override same-named DDS files in the parent folder.
+- It also writes 120-frame, 1024px DXT1 vertical-scroll loops to `input/dds/animated/`; the loader keeps them separate from selectable skybox textures.
+- The mod scans only `input/dds/`; PNGs are never used directly by the game.
+- In-game, use **Generate DDS from PNGs** to make base DDS files and vertical frames, then the mod rescans automatically.
+- The hidden generator is monitored and stopped when `PAYDAY2.exe` exits. If you close the game during generation, rerun the generator to complete any partial output.
 
-## File format
+## File Format
 
-| Requirement | Value |
-|---|---|
-| Container | DDS, or PAYDAY's native `.texture` |
-| Compression | DXT1 or DXT5 |
-| Dimensions | Width and height must both be multiples of 4 |
+**Required in `input/dds/`:** DDS format (DXT1 or DXT5 compression)
+**Dimensions:** Both width and height must be multiples of 4 (e.g., 1024x1024, 2048x1024, 512x512)
 
-DXT5 is used for the shipped assets. DXT1 is fine for opaque images.
+## Naming Convention
 
-## Naming convention
-
-For each skybox, provide up to three files sharing a base name:
+For each skybox, provide up to 3 files with matching base name:
 
 ```
-your_skybox_name_df.dds    # diffuse / base texture (REQUIRED unless using a plain file)
-your_skybox_name_il.dds    # illumination / glow texture (optional)
-your_skybox_name_cm.dds    # cubemap texture (optional)
+your_skybox_name_df.dds    # Diffuse/base texture (REQUIRED)
+your_skybox_name_il.dds    # Illumination/glow texture (optional)
+your_skybox_name_cm.dds    # Cubemap texture (optional)
 ```
 
-A single file with no `_df` / `_il` / `_cm` suffix is accepted and reused for all
-three slots. This is how the shipped skyboxes are stored.
-
+Examples:
 ```
 tropical_sunset_df.dds
 tropical_sunset_il.dds
 tropical_sunset_cm.dds
+
+night_stars_df.dds
+night_stars_cm.dds
 ```
 
-Names must be lowercase with underscores only. `default` and `black` are
-reserved and will be skipped.
+## After Adding Files
 
-`data/skyboxes.json` supplies the display name shown in the menu. Add an entry
-there to give a new skybox a friendly label; without one the raw filename is
-shown.
-
-## After adding files
-
-1. Drop PNGs into `input/png/`.
-2. In game, open **Mod Options > skybox > Generator**.
-3. Click **Generate DDS from PNGs**.
-4. Outputs land in `input/dds/generated/` and the mod rescans automatically.
-
-The bake runs in a hidden background process and is cancelled if PAYDAY 2
-closes. If you close the game mid-bake, rerun it to finish the remaining files.
+1. Place source PNGs in `input/png/`.
+2. In-game, go to Mod Options > skybox_animated > Generator.
+3. Click **"Generate DDS from PNGs"**.
+4. Generated base files named exactly like the PNG (with `.dds`) appear in `input/dds/generated/`; vertical frames appear in `input/dds/animated/`. The mod rescans when generation completes. Keep PAYDAY 2 open until the completion message appears.
 
 ## Tips
 
-- Panoramic / equirectangular images give the most convincing result.
-- The bake resizes to 2048x2048 by default.
-- A `.manifest.json` is written beside each output to skip work on reruns.
+- For best results, use panoramic/equirectangular textures for sky domes
+- The `_il` (illumination) texture adds glowing/emissive effects
+- The `_cm` (cubemap) texture enables cubemap-based rendering
+- Keep file sizes reasonable (< 10MB each) for faster loading
+- You can also use `.texture` files (PAYDAY 2's native format) instead of `.dds`
 
 ## Troubleshooting
 
-A skybox that does not appear is almost always a rejected file. Enable
-**Developer Logs** and press **Generate SA Logs** to see the exact reason:
-
-- `not a DDS file` - the file is not a DDS container.
-- `unsupported DDS format` - only DXT1 and DXT5 are accepted.
-- `size WxH: both sides must be multiples of 4` - resize the source.
-- `needs a diffuse _df texture or a plain DDS` - a stray `_il` or `_cm` was
-  found with no matching `_df`.
+If a skybox doesn't appear after rescanning:
+- Check the console (F11) for error messages like "not a DDS file" or "unsupported DDS format"
+- Ensure dimensions are multiples of 4
+- Use DXT1 for opaque textures, DXT5 for textures with alpha
+- Filenames must be lowercase with underscores only (no spaces, special chars)

@@ -9,6 +9,7 @@ local MENU_SKYBOX = "skybox_animated_skybox"
 local MENU_GENERATOR = "skybox_animated_generator"
 local MENU_HEISTS = "skybox_animated_heists"
 local MENU_HEIST = "skybox_animated_heist"
+local MENU_ROTATION = "skybox_animated_rotation"
 local refresh_heist_choices
 local heist_tab_item
 
@@ -126,8 +127,8 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 		if loader then loader.rescan() end
 		refresh_heist_choices(MENU_HEIST)
 		DelayedCalls:Add("skybox_animated_rescan_apply", 0.5, function()
-			local env = _G.skybox_animated_env
-			if env and env.invalidate then env.invalidate() end
+			local SA = _G.skybox_animated
+			if SA and SA.update then SA.update() end
 		end)
 		QuickMenu:new(managers.localization:text("sa_rescan_title"), managers.localization:text("sa_rescan_done"), {}, true)
 	end
@@ -141,7 +142,110 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 		end
 	end
 
-	-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
+	-- Dump the sky internals probe. Read-only: it only reads values and writes
+	-- sky_probe_report.txt to the BLT save folder.
+
+	-- Read-only inspection of the environment swap API. No writes.
+
+	-- DISABLED - both swap routes access-violiated inside PackageManager:_script_data,
+	-- reached through BeardLib's FileManager:Process:46. Tried
+	-- managers.viewport:set_override_environment, then worlddefinition:_set_environment;
+	-- both faulted on a real environment load. Restarting the level is the only
+	-- way back, so the button is removed rather than hidden.
+	-- MenuCallbackHandler.sa_env_swap = function()
+	-- 	local m = _G.env_swap
+	-- 	if not (m and m.run) then
+	-- 		QuickMenu:new("Env swap", "env_swap_test.lua not loaded", {}, true)
+	-- 		return
+	-- 	end
+	-- 	QuickMenu:new("Env swap", "Swapping environment, watch the sky...", {}, true)
+	-- 	m.run()
+	-- 	QuickMenu:new("Env swap", "Done. It restores the game default environment after 2 seconds.", {}, true)
+	-- end
+		-- Read-only inspection of the sky rotation API. No writes.
+
+	-- Rotates the dome by +90 degrees, reads it back, then restores it.
+	MenuCallbackHandler.sa_skyrot_test = function()
+		local m = _G.skyrot
+		if not (m and m.run) then
+			QuickMenu:new("Sky rotation", "sky_rot_probe.lua not loaded", {}, true)
+			return
+		end
+		QuickMenu:new("Sky rotation", "Rotating +90 degrees, watch the sky...", {}, true)
+		m.run()
+		QuickMenu:new("Sky rotation", "Done. It restores itself in 4 seconds.", {}, true)
+	end
+
+	-- =========================================================================
+	-- Sky rotation driver: enable, and speed in degrees per second.
+	-- =========================================================================
+
+	MenuCallbackHandler.sa_rot_enabled = function(self, item)
+		local m = _G.sky_rotation
+		if not m then
+		QuickMenu:new("Sky rotation", "sky_rotation.lua not loaded", {}, true)
+		return
+	end
+	m.set_enabled(item:value() == "on")
+	QuickMenu:new("Sky rotation", m.status(), {}, true)
+end
+
+-- Brightness removed. Two dead routes, both measured:
+--   1. Underlay:material("sky"):set_variable() is a silent no-op - it returns
+--      without raising and the value reads back unchanged.
+--   2. The environment data path underlay_effect/sky_top/sky_intensity exists
+--      only in Tier 2 and 3 environments, 51 of 225. The other 174 are Tier 1
+--      legacy and have no sky intensity key under any path name.
+-- A control that works on 23% of levels is worse than no control, because it
+-- looks functional. See 10_provenance_ledger.md in the report repo.
+
+MenuCallbackHandler.sa_rot_speed = function(self, item)
+	local m = _G.sky_rotation
+	if not m then return end
+	m.set_speed(tonumber(item:value()))
+end
+
+-- One-shot toggle from the diagnostics side, so it is reachable even if the
+-- player never opens the rotation tab.
+MenuCallbackHandler.sa_rot_toggle = function()
+	local m = _G.sky_rotation
+	if not m then
+		QuickMenu:new("Sky rotation", "sky_rotation.lua not loaded", {}, true)
+		return
+	end
+	m.set_enabled(not m.enabled)
+	QuickMenu:new("Sky rotation", m.status(), {}, true)
+end
+
+	-- Read-only time series of the sky rotation across every active viewport.
+	-- Answers whether anything animates it while you stand still.
+
+	-- Read-only survey of the scrolling cloud materials on sky_1945_sunset_clouds.
+	MenuCallbackHandler.sa_cloud_inspect = function()
+		local m = _G.cloudprobe
+		if not (m and m.inspect) then
+			QuickMenu:new("Clouds", "cloud_probe.lua not loaded", {}, true)
+			return
+		end
+		m.inspect()
+		QuickMenu:new("Clouds", "Written to cloud_report.txt", {}, true)
+	end
+
+	-- Flips the x component of uv0_speed on the first cloud material that has
+	-- one, then restores it. Only reachable on a level using
+	-- sky_1945_sunset_clouds - it aborts anywhere else.
+	MenuCallbackHandler.sa_cloud_test = function()
+		local m = _G.cloudprobe
+		if not (m and m.run) then
+			QuickMenu:new("Clouds", "cloud_probe.lua not loaded", {}, true)
+			return
+		end
+		QuickMenu:new("Clouds", "Reversing cloud scroll, watch the sky...", {}, true)
+		m.run()
+		QuickMenu:new("Clouds", "Done. It restores itself after 1 second.", {}, true)
+	end
+
+		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
 	local function dds_progress_summary(result)
 	result = tostring(result or "")
@@ -209,8 +313,8 @@ MenuCallbackHandler.sa_generate_dds_from_png = function()
 				if loader then loader.rescan() end
 				refresh_heist_choices(MENU_HEIST)
 				DelayedCalls:Add("skybox_animated_python_generator_apply", 0.5, function()
-					local env = _G.skybox_animated_env
-					if env and env.invalidate then env.invalidate() end
+					local SA = _G.skybox_animated
+					if SA and SA.update then SA.update() end
 				end)
 				QuickMenu:new(managers.localization:text("sa_dds_generator_title"), managers.localization:text("sa_dds_generator_done") .. " " .. result, {}, true)
 			elseif result:match("^CANCELLED") then
@@ -251,6 +355,7 @@ Hooks:Add("MenuManagerSetupCustomMenus", "skybox_animated_setup", function()
 	MenuHelper:NewMenu(MENU_GENERATOR)
 	MenuHelper:NewMenu(MENU_HEISTS)
 	MenuHelper:NewMenu(MENU_HEIST)
+	MenuHelper:NewMenu(MENU_ROTATION)
 end)
 
 local function add_to(menu_id, kind, id, data)
@@ -307,6 +412,32 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	MenuHelper:AddButton({ id = "sa_rescan_skyboxes", title = "sa_rescan_skyboxes_title", desc = "sa_rescan_skyboxes_desc", callback = "sa_rescan_skyboxes", menu_id = MENU_GENERATOR, priority = 100 })
 	MenuHelper:AddButton({ id = "sa_dump_diagnostics", title = "sa_logs_title", desc = "sa_logs_desc", callback = "sa_dump_diagnostics", menu_id = MENU_GENERATOR, priority = 90 })
 
+	-- Rotation tab: the per-frame sky scroll driver.
+	local rot = _G.sky_rotation or {}
+	MenuHelper:AddToggle({
+		id = "sa_rot_enabled",
+		title = "sa_rot_enabled_title",
+		desc = "sa_rot_enabled_desc",
+		callback = "sa_rot_enabled",
+		menu_id = MENU_ROTATION,
+		value = rot.enabled == true and "on" or "off",
+		priority = 110,
+	})
+	MenuHelper:AddSlider({
+		id = "sa_rot_speed",
+		title = "sa_rot_speed_title",
+		desc = "sa_rot_speed_desc",
+		callback = "sa_rot_speed",
+		menu_id = MENU_ROTATION,
+		value = rot.speed or 4.0,
+		min = -360,
+		max = 360,
+		step = 0.5,
+		show_value = true,
+		priority = 100,
+	})
+	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
+
 	local config = S.current_config or {}
 	local heist_skybox_choices = skybox_choices(config.skybox)
 	add_to(MENU_HEIST, "choice", "heist_skybox", { value = config.skybox or heist_skybox_choices[1], items = heist_skybox_choices, item_values = heist_skybox_choices, localized_items = false, priority = 100 })
@@ -320,8 +451,10 @@ Hooks:Add("MenuManagerBuildCustomMenus", "skybox_animated_build", function(menu_
 	nodes[MENU_GENERATOR] = MenuHelper:BuildMenu(MENU_GENERATOR)
 	nodes[MENU_HEISTS] = MenuHelper:BuildMenu(MENU_HEISTS)
 	nodes[MENU_HEIST] = MenuHelper:BuildMenu(MENU_HEIST)
+		nodes[MENU_ROTATION] = MenuHelper:BuildMenu(MENU_ROTATION)
 
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_SKYBOX, "sa_skybox_tab_title", "sa_skybox_tab_desc")
+		MenuHelper:AddMenuItem(nodes[MENU_SKYBOX], MENU_ROTATION, "sa_rotation_tab_title", "sa_rotation_tab_desc")
 	heist_tab_item = MenuHelper:AddMenuItem(nodes[MENU], MENU_HEISTS, "sa_heist_tab_title", "sa_heist_tab_desc")
 	if heist_tab_item then heist_tab_item:set_enabled(not S.settings.global_enabled) end
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_GENERATOR, "sa_generator_tab_title", "sa_generator_tab_desc")

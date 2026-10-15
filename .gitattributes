@@ -1,9 +1,16 @@
-# Keep everything LF. Lua tolerates CRLF, but pinning it avoids noisy diffs
-# and keeps the DDS/status parsing paths predictable across platforms.
+# Normalise to LF in the repository so diffs stay stable across machines.
 * text=auto eol=lf
 
-*.dds binary
-*.glb binary
-*.png binary
-*.jpg binary
-*.pyc binary
+*.lua   text eol=lf
+*.py    text eol=lf
+*.vbs   text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+*.md    text eol=lf
+
+*.dds   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.glb   binary
+*.zip   binary

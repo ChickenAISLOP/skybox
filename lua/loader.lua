@@ -26,6 +26,7 @@ local RESERVED = { default = true, black = true }
 L.problems = {}
 L.reg = {}
 L.skybox_list = {}
+L.animations = {}
 
 local function problem(msg)
 	L.problems[#L.problems + 1] = msg
@@ -142,6 +143,9 @@ local function make_skybox(id, meta, base, glow, cubemap)
 		base = base,
 		glow = glow,
 		cubemap = cubemap,
+		rotation = m.rotation or { x = 0, y = 0, z = 0 },
+		uv_scroll = m.uv_scroll or { u = 0, v = 0 },
+		color = m.color,
 	}
 end
 

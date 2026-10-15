@@ -20,13 +20,9 @@ from array import array
 import bpy
 
 
-_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
-_MOD_DIR = os.path.dirname(_TOOLS_DIR)
-
-# The reference sky mesh ships next to this script.
-DEFAULT_MESH = os.path.join(_TOOLS_DIR, "default_sky.glb")
-DEFAULT_SOURCE = None
-DEFAULT_OUTPUT = None
+DEFAULT_MESH = r"C:\Users\meow\AppData\Local\Temp\opencode\skybox_x_zip\x\skies\default\default.glb"
+DEFAULT_SOURCE = r"D:\SteamLibrary\steamapps\common\PAYDAY 2\mods\skybox_animated\input\png\50_df.png"
+DEFAULT_OUTPUT = r"D:\SteamLibrary\steamapps\common\PAYDAY 2\mods\skybox_animated\input\dds\sky_baked_payday_uv_python.dds"
 BAKE_SIZE = 2048
 BAKE_MARGIN = 24
 PANORAMA_WIDTH = 2048
@@ -36,14 +32,10 @@ SEAM_FEATHER_PIXELS = 24
 
 def arguments():
     args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    if len(args) < 3:
-        raise SystemExit(
-            "usage: blender --python bake_to_payday_sky_uv.py -- <source.png> <output.dds> [mesh.glb]"
-        )
     return (
-        os.path.abspath(args[2]) if len(args) > 2 else DEFAULT_MESH,
-        os.path.abspath(args[0]),
-        os.path.abspath(args[1]),
+        os.path.abspath(args[0]) if len(args) > 0 else DEFAULT_MESH,
+        os.path.abspath(args[1]) if len(args) > 1 else DEFAULT_SOURCE,
+        os.path.abspath(args[2]) if len(args) > 2 else DEFAULT_OUTPUT,
     )
 
 
@@ -164,7 +156,7 @@ def main():
         bake_one(mesh_path, source_path, output_path)
         return
 
-    input_dir = os.path.join(_MOD_DIR, "input", "png")
+    input_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "input")
     generated_suffixes = ("_equirectangular", "_baked_payday_uv", "_payday_baked", "_test_view")
     sources = []
     for filename in sorted(os.listdir(input_dir)):

@@ -69,19 +69,6 @@ local IDS_TEXTURE = Idstring("texture")
 local IDS_DIFFUSE = Idstring("diffuse_texture")
 local IDS_NORMAL = Idstring("normal")
 
-local function resolve_skybox(id)
-	for _, skybox in ipairs((_G.skybox_animated_loader and _G.skybox_animated_loader.skyboxes()) or {}) do
-		if skybox.id == id then return skybox end
-	end
-	return nil
-end
-
--- Every id in core.lua's heist_environments table refers to a vanilla sky
--- texture, and the loader only ever sees textures in input/dds. An unconfigured
--- heist would therefore resolve to nothing and fall back to the stock sky just
--- because a vanilla texture is not installed. Falling back to the global choice
--- keeps the mod active instead; the user still gets the stock sky if they clear
--- the selection entirely.
 local function selected_skybox(SA, settings, heist)
 	local id
 	if settings.global_enabled then
@@ -91,7 +78,10 @@ local function selected_skybox(SA, settings, heist)
 		if not cfg or cfg.enabled == false then return nil end
 		id = cfg.skybox
 	end
-	return resolve_skybox(id) or resolve_skybox(settings.default_skybox)
+	for _, skybox in ipairs((_G.skybox_animated_loader and _G.skybox_animated_loader.skyboxes()) or {}) do
+		if skybox.id == id then return skybox end
+	end
+	return nil
 end
 
 local function apply_texture(skybox)
@@ -239,18 +229,10 @@ Hooks:Add("GameSetupUpdate", "skybox_animated_env_update", function(t, dt)
 	Env.update(t, dt)
 end)
 
--- Forces the next update() to re-apply the sky texture. The per-frame loop only
--- touches the material when the selected skybox id changed, so a rescan that
--- swapped the texture *files* under an unchanged id would otherwise keep showing
--- the old texture until the next heist.
-function Env.invalidate()
+Hooks:Add("LevelLoaded", "skybox_animated_level_loaded", function()
 	Env.applied_texture = nil
 	Env.applied_level = nil
 	Env.last_texture_load_attempt = nil
-end
-
-Hooks:Add("LevelLoaded", "skybox_animated_level_loaded", function()
-	Env.invalidate()
 	Env.work_count = 0
 	Env.work_window_start = nil
 	Env.work_window_count = 0

@@ -6,6 +6,9 @@ The mod swaps the diffuse texture on the game's Underlay `sky` material, so it
 works on every heist without touching any vanilla file. Nine skyboxes ship with
 it, and you can bake your own from PNGs without leaving the main menu.
 
+It also **rotates the sky**, per frame, at any speed you like - see the
+**Sky Animation** tab below.
+
 ## Requirements
 
 - PAYDAY 2
@@ -40,6 +43,17 @@ Disabled while Global Heist Skybox is on. Turn it off first.
 
 Pick a heist, choose its **Heist Skybox**, toggle **Heist Override Enabled**, then
 press **Save Heist**.
+
+### Sky Animation tab
+
+| Control | Effect |
+|---|---|
+| **Rotate the sky** | Starts and stops the rotation driver. Off restores the angle the level loaded with. |
+| **Rotation speed** | Degrees per second, `-360` to `360` in steps of `0.5`. Negative reverses. `4.0` is a full turn in 90 seconds. |
+| **Rotation status** | Starts or stops the driver and prints its current state. |
+
+Settings persist to `saves/sky_rotation_settings.json`, so the driver stays on across
+heists and restarts once you have enabled it.
 
 ### Generator tab
 
@@ -83,24 +97,54 @@ Source images are not committed to this repo, so a fresh clone has an empty
 
 ## Scope
 
-This mod does one thing: **swap the sky texture.** It does not rotate skies or
-scroll clouds.
+Two things: **swap the sky texture**, and **rotate the sky**.
 
-Earlier versions carried rotation, UV scrolling, brightness and tint controls
-and per-frame animation frames. None of it ever had a visible effect - the
-stock sky material exposes no `uv_speed` or pattern variable to drive, so the
-engine silently rejected every generated material config - while the frame
-swapping measurably cost framerate. It was removed rather than left in as a
-control panel that does nothing. The dead code and the README section describing
-it are gone as of this version.
+Rotation drives `sky_orientation/rotation`, a live environment value:
 
-Sky animation is only possible with a custom sky shader, which is a much larger
-job than a texture swap.
+```lua
+local key = Idstring("sky_orientation/rotation"):key()   -- 3c084f67b1da34be
+local h = managers.viewport:first_active_viewport()._env_handler
+R.angle = (R.angle + speed * dt) % 360
+h:editor_set_value(key, R.angle)
+```
+
+It is time-based rather than frame-based, so the rate is identical at 30, 60, 144 or
+240 fps - only the number of writes changes.
+
+### What is NOT possible
+
+An earlier version of this README said the sky could not be rotated at all, on the
+grounds that "the stock sky material exposes no `uv_speed` or pattern variable to
+drive". That reasoning was wrong, and this section replaces it.
+
+The material observation was correct - `Underlay:material("sky")` really does expose
+only `params_a`, `params_b`, `color0` and `color2`. But rotation is not a material
+variable. It lives on the viewport's environment handler, one layer up.
+
+What *is* true, and was measured:
+
+- `material:set_variable()` is a **silent no-op**. It returns without raising and the
+  value reads back unchanged. Writes to `params_b.x` look like they work and are not.
+  This is why brightness and tint controls were removed rather than shipped as a
+  control panel that does nothing.
+- Brightness has no working route. The environment key
+  `underlay_effect/sky_top/sky_intensity` exists in only **51 of 225** environments
+  (Tier 2 and 3); the other 174 are Tier 1 legacy with no sky-intensity key at all. A
+  control that works on 23% of levels is worse than none.
+- Scrolling cloud layers is **not** implemented. It is possible in principle -
+  `sky_1945_sunset_clouds` and its Mexico DLC twin declare three cloud materials with
+  their own `uv0_speed` - but no route to those materials has been found. Note that
+  those skies already scroll their clouds in vanilla; rotation moves them, it does not
+  scroll them.
+
+Whole-environment swapping also exists but is not exposed here. It access-violates
+inside `PackageManager:_script_data` when BeardLib is installed.
 
 ## How it works
 
 | File | Role |
 |---|---|
+| `lua/sky_rotation.lua` | Drives `sky_orientation/rotation` every frame. Self-heals after a level load and persists its settings. |
 | `lua/environment_hook.lua` | Hooks `GameSetupUpdate` and re-applies the texture via `Application:set_material_texture`. Also owns the diagnostics dump. |
 | `lua/loader.lua` | Scans `input/dds/`, validates each file, and registers DB entries. |
 | `lua/core.lua` | Per-heist config and the heist-to-skybox fallback table. |
@@ -124,6 +168,8 @@ Two details worth knowing:
 | `saves/skybox_animated_settings.json` | Global settings |
 | `saves/skybox_animated_heists.json` | Per-heist overrides |
 | `saves/skybox_animated.log` | Log output |
+| `saves/sky_rotation_settings.json` | Rotation enabled state and speed |
+| `saves/sky_rotation.log` | Rotation driver log |
 
 ## Troubleshooting
 
