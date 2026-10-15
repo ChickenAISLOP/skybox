@@ -12,7 +12,7 @@ It also **rotates the sky**, per frame, at any speed you like - see the
 ## Requirements
 
 - PAYDAY 2
-- [BLT](https://github.com/userthug/BLT) and
+- [BLT](https://modworkshop.net/mod/58342) and
   [BeardLib](https://github.com/DrakModding/BeardLib) (Underlay comes from
   BeardLib; the mod does nothing without it)
 - Python with Pillow, numpy and quicktex - **only** if you want to bake your own
