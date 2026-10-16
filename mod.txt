@@ -16,10 +16,6 @@
     {
       "hook_id": "lib/setups/gamesetup",
       "script_path": "lua/sky_rotation.lua"
-    },
-    {
-      "hook_id": "lib/setups/gamesetup",
-      "script_path": "lua/shadow_control.lua"
     }
   ]
 }

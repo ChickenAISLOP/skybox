@@ -53,10 +53,6 @@
 	"sa_save": "Save",
 	"sa_save_done": "Heist skybox settings saved.",
 	"sa_save_heist_title": "Saved",
-	"sa_shadow_enabled_desc": "Washes the black out of the sun's shadows. Lighting and post effects stay on.",
-	"sa_shadow_enabled_title": "Disable the sun's shadow",
-	"sa_shadow_tab_desc": "Turn off the sun's cast shadow.",
-	"sa_shadow_tab_title": "Shadows",
 	"sa_skybox_tab_desc": "Global skybox and animation settings.",
 	"sa_skybox_tab_title": "Skybox"
 }
