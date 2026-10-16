@@ -95,16 +95,40 @@ R._loaded = true
 -- modes
 -- ---------------------------------------------------------------------------
 --
--- "blank" swaps the whole shadow post processor for the null implementation
--- "empty", which core/shaders/post_processor.post_processor really does define.
--- This is exactly what ModWorkshop 20568 does at its line 10, and shadow_processor
--- is the only shadow-related name that resolves.
+-- MEASURED RESULTS, in the order they were tried
+--   rendering  shadow_rendering -> empty       ACCEPTED, NO EFFECT (slot is nil)
+--   hide       shadow_processor:set_visibility(false)
+--                                            ACCEPTED, NO EFFECT  2026-10-16 10:34
+--   blank      shadow_processor -> empty       RAN 2026-10-16 10:36:47, 2 viewports,
+--                                            0 errors. Visual result NOT yet
+--                                            reported - it was never looked at
+--                                            before the mode was switched away.
+--   ref_full   15 effects                     30 writes, 0 errors. SCENE WENT BLACK.
 --
--- "hide" uses set_visibility instead, found by introspection. Kept as a
--- fallback in case "empty" turns out to be rejected for this slot the same way
--- it was rejected for the inner names.
+-- "blank" is the only remaining option and the only one whose visual result is
+-- still unknown. It is verbatim the line ModWorkshop 20568 uses.
 
 local I_EMPTY = Idstring("empty")
+
+-- "deferred" and "ref_full" were shipped as diagnostics on 2026-10-16 and are
+-- now REMOVED. ref_full blanked the entire scene to black: it removes the
+-- deferred lighting pass, and with it every light in the level. Do not put
+-- them back.
+--
+-- They did prove the one thing worth proving - the writes are real and
+-- mutative, not silent no-ops:
+--
+--   before ref_full:  shadow_processor  [TextureEffectInstanceInterface ...]
+--                     deferred          [TextureEffectInstanceInterface ...]
+--   after  ref_full:  shadow_processor  nil
+--                     deferred          nil
+--
+-- "empty" DESTROYS the pass rather than hiding it. That is a one-way door: once
+-- removed the name no longer resolves, so there is nothing to write back to and
+-- no inverse to compute. A game restart is the only restore, which is why
+-- R.disable writes nothing.
+--
+-- So there is exactly one safe thing to try, and it is "blank".
 
 R.MODES = {
 	blank = { { kind = "impl", name = "shadow_processor", value = I_EMPTY } },
