@@ -6,33 +6,33 @@
 -- Seven crashes in this project, all mine. This file caused number 7, at
 -- shadow_control.lua:271, when it drove set_post_processor_effect from a
 -- heartbeat during MenuManagerOnOpenMenu. pcall cannot catch an access
--- violation, so the guard did nothing. Nothing in this file calls
--- set_post_processor_effect from a hook or a timer any more.
+-- violation, so the guard did nothing. Nothing here calls
+-- set_post_processor_effect any more.
 --
--- WHAT ACTUALLY WORKS, AND WHAT DOES NOT
--- The shadow is produced and consumed by two different passes:
+-- WHY THIS APPROACH
+-- The shadow map has a producer and a consumer:
 --
 --   shadow_processor  ->  renders the shadow depth map
 --   deferred          ->  consumes it during lighting
 --
--- Driving the producer off therefore does not delete the shadow, it freezes it.
--- Both of those were measured on 2026-10-16 and both leave the same artifact -
--- a stale shadow shape sitting on the ground that no longer matches the
--- geometry:
+-- Driving the producer off does not delete the shadow, it freezes it. Two ways
+-- of doing that were measured on 2026-10-16 and both left the same artifact, a
+-- stale shadow shape on the ground that matched no geometry:
 --
---   blank  shadow_processor -> empty                  "it stop moving shadow"
---   hide   shadow_processor:set_visibility(false)     "glitch shadow"
+--   shadow_processor -> empty                    "it stop moving shadow"
+--   shadow_processor:set_visibility(false)       "glitch shadow"
 --
--- They are kept only for reference. Neither is a fix.
+-- Removing the consumer instead goes black, because deferred_lighting carries
+-- every light in the level.
 --
--- THE FIX
--- Flood the ambient term instead. Ambient is added uniformly to lit and
--- shadowed surfaces alike, so raising it washes the black out of the shadows
--- without touching the shadow map, the lighting pass, or any post-process
--- effect. SSAO, bloom, AA, DOF and colour grading are all left running.
+-- So neither end of the pass is touchable. What is left is to wash the black
+-- out of the shadow instead. Ambient is added uniformly to lit and shadowed
+-- surfaces alike, so raising it drains the contrast out of a shadow without
+-- touching the shadow map, the lighting pass, or any post-process effect. SSAO,
+-- bloom, AA, DOF and colour grading all keep running.
 --
--- This is the mechanism Fullbright Diesel 3.0 uses, and every symbol it relies
--- on was verified present in this build before being used:
+-- This is the ambient half of Fullbright Diesel 3.0's effect. Every symbol it
+-- relies on was verified present in this build before being used:
 --
 --   Color("fff")                                       167 installed mods use it
 --   CoreEnvironmentFeeder.PostAmbientColorFeeder        exact match in
@@ -40,23 +40,24 @@
 --   managers.viewport:create_global_environment_modifier   coreviewportmanager.lua
 --   managers.viewport:destroy_global_environment_modifier  coreviewportmanager.lua
 --
--- IT IS FULLY REVERSIBLE
--- create/destroy_global_environment_modifier is a paired API and the destroy
--- call is the documented inverse. That is the difference between this and every
--- previous attempt: set_post_processor_effect DESTROYS the pass, after which the
--- name no longer resolves and there is no value to write back. Here the post
--- processor is never touched at all, so turning the toggle off genuinely
+-- Fullbright pairs this with a swap to albedo_visualization for true flat
+-- fullbright. That effect lives in Fullbright's own sky.xml rather than in the
+-- base game, so it does not exist unless that mod is installed, and shipping a
+-- second copy of the engine's post-processor database from inside this mod is
+-- not worth the risk. Ambient alone is enough to clear the shadow.
+--
+-- IT IS REVERSIBLE
+-- create_global_environment_modifier and destroy_global_environment_modifier
+-- are a paired API, and destroy is the documented inverse. That is the whole
+-- difference from every earlier attempt: set_post_processor_effect DESTROYS the
+-- pass, after which the name no longer resolves and there is no value to write
+-- back. Here no post processor is touched at all, so switching off genuinely
 -- restores the level.
 --
--- A mode "albedo" would swap deferred to albedo_visualization for true flat
--- fullbright, but albedo_visualization is defined in Fullbright's own sky.xml,
--- not in the base game, so it does not exist unless that mod is installed.
--- Not shipped.
---
 -- APPLY POLICY
--- Applied on explicit player action, and re-applied once on LevelLoaded after a
--- short delay, because a level load rebuilds the environment and would
--- otherwise drop the modifier. No per-frame heartbeat: the crash came from one.
+-- Applied on explicit player action, plus one re-apply two seconds after a level
+-- load, because a level load rebuilds the environment and drops the modifier.
+-- DelayedCalls:Add takes SECONDS. No per-frame heartbeat; that is what crashed.
 -- ============================================================================
 
 _G.shadow_control = _G.shadow_control or {}
@@ -66,51 +67,36 @@ if R._loaded then return end
 R._loaded = true
 
 local AMBIENT_KEY = "PostAmbientColorFeeder"
-
--- modes ---------------------------------------------------------------------
-
-R.MODES = {
-	-- flood ambient. The fix. Shadows wash out, lighting and every
-	-- post-process effect stay exactly as the level set them.
-	ambient = { kind = "ambient" },
-	-- kept for reference only; both leave a stale frozen shadow
-	blank   = { kind = "impl", name = "shadow_processor", value = Idstring("empty") },
-	hide    = { kind = "vis",  name = "shadow_processor", value = false },
-}
-
-R.MODE_ORDER = { "ambient", "blank", "hide" }
+local AMBIENT_SCALE = 1.5
 
 R.enabled = R.enabled == true
-R.mode    = R.mode or "ambient"
-R.scale   = tonumber(R.scale) or 1.5
-
-R.applied   = false
-R.errors    = 0
-R.viewports = 0
-R.probed    = false
-
--- logging -------------------------------------------------------------------
+R.applied = false
+R.errors  = 0
 
 local function out(s)
 	if log then log("[shadowctl] " .. s) end
 end
 
-local function write_log(lines)
-	for _, l in ipairs(lines) do out(l) end
-	local f = io.open(SavePath .. "shadow_control.log", "a")
-	if f then
-		for _, l in ipairs(lines) do f:write(os.date("[%H:%M:%S] ") .. l .. "\n") end
-		f:close()
-	end
-end
-
+-- Throttled. A rebuild can be triggered several times in one second and this log
+-- has a history of filling with identical lines; 2026-10-16 11:07:43 managed
+-- hundreds of them in a single tick.
+local _seen = {}
 local function note(s)
+	local key = s:gsub("%d+%.?%d*", "N")
+	if _seen[key] then return end
+	_seen[key] = true
+	local n = 0
+	for _ in pairs(_seen) do n = n + 1 end
+	if n > 40 then _seen = {} end
+
 	out(s)
 	local f = io.open(SavePath .. "shadow_control.log", "a")
 	if f then f:write(os.date("[%Y-%m-%d %H:%M:%S] ") .. s .. "\n"); f:close() end
 end
 
--- feeders -------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- feeders
+-- ---------------------------------------------------------------------------
 
 local function ambient_key()
 	local ok, f = pcall(function()
@@ -129,15 +115,93 @@ local function viewport_manager()
 	return m
 end
 
--- apply ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- freeze
+-- ---------------------------------------------------------------------------
+--
+-- set_visibility(false) on the shadow processor stops the shadow map being
+-- re-rendered, so the shadow stops moving. Measured 2026-10-16 as leaving a
+-- stale shape that matched no geometry - but on its own that artifact was fully
+-- visible black. With the ambient flood on top of it, the frozen shadow is
+-- washed out along with everything else, so the artifact stops reading as one.
+--
+-- This is why blank was not used. set_post_processor_effect DESTROYS the pass,
+-- so the name stops resolving and only a game restart can bring it back.
+-- set_visibility is a flag, and putting it back to true is expected to resume
+-- rendering. That expectation is UNTESTED - if the toggle does not bring live
+-- shadows back, a restart will.
+
+local function viewports()
+	if not (managers and managers.viewport) then return nil end
+	local ok, list = pcall(function() return managers.viewport:viewports() end)
+	if not ok or type(list) ~= "table" then return nil end
+	local out_list, n = {}, 0
+	for _, entry in ipairs(list) do
+		local g, native = pcall(function() return entry:vp() end)
+		if g and native then
+			n = n + 1
+			out_list[n] = native
+		end
+	end
+	if n == 0 then return nil end
+	return out_list
+end
+
+local function set_freeze(on)
+	local list = viewports()
+	if not list then return 0 end
+	local n, bad = 0, 0
+	for _, vp in ipairs(list) do
+		local ok = pcall(function()
+			local p = vp:get_post_processor_effect("World", Idstring("shadow_processor"))
+			if p then p:set_visibility(not on) end
+		end)
+		if ok then n = n + 1 else bad = bad + 1 end
+	end
+	note(string.format("freeze %s: %d viewport(s), %d failed", tostring(not on), n, bad))
+	return n
+end
+
+-- ---------------------------------------------------------------------------
+-- apply
+-- ---------------------------------------------------------------------------
+
+local function apply_impl()
+	local m = viewport_manager()
+	if not m then
+		note("apply refused: no create/destroy_global_environment_modifier")
+		return false
+	end
+	local key = ambient_key()
+	if not key then
+		note("apply refused: CoreEnvironmentFeeder." .. AMBIENT_KEY .. " not found")
+		return false
+	end
+
+	-- Clear first so repeated presses cannot stack modifiers.
+	pcall(function() m:destroy_global_environment_modifier(key) end)
+
+	local ok, err = pcall(function()
+		m:create_global_environment_modifier(key, true, function()
+			return Color("fff") * AMBIENT_SCALE
+		end)
+	end)
+
+	R.applied = ok
+	if not ok then
+		R.errors = R.errors + 1
+		note("create error #" .. tostring(R.errors) .. ": " .. tostring(err))
+		return false
+	end
+
+	note(string.format("ambient flooded: %s = white x %.2f", AMBIENT_KEY, AMBIENT_SCALE))
+	return true
+end
 
 local function clear_impl()
 	local m = viewport_manager()
 	local key = ambient_key()
-	if not m or not key then
-		note("clear: " .. (not m and "no viewport manager" or "no " .. AMBIENT_KEY))
-		return false
-	end
+	if not m or not key then return false end
 	local ok, err = pcall(function() m:destroy_global_environment_modifier(key) end)
 	R.applied = false
 	if not ok then
@@ -148,141 +212,56 @@ local function clear_impl()
 	return true
 end
 
-local function apply_impl()
-	local mode = R.MODES[R.mode]
-	if not mode then return false end
-
-	if mode.kind == "ambient" then
-		local m = viewport_manager()
-		local key = ambient_key()
-		if not m then
-			note("apply refused: no create/destroy_global_environment_modifier")
-			return false
-		end
-		if not key then
-			note("apply refused: CoreEnvironmentFeeder." .. AMBIENT_KEY .. " not found")
-			return false
-		end
-
-		local scale = tonumber(R.scale) or 1.5
-
-		-- Clear first so repeated presses do not stack modifiers.
-		pcall(function() m:destroy_global_environment_modifier(key) end)
-
-		local ok, err = pcall(function()
-			m:create_global_environment_modifier(key, true, function()
-				return Color("fff") * scale
-			end)
-		end)
-		R.applied = ok
-		if not ok then
-			R.errors = R.errors + 1
-			note("create error #" .. tostring(R.errors) .. ": " .. tostring(err))
-			return false
-		end
-		note(string.format("ambient flooded: %s = white x %.2f", AMBIENT_KEY, scale))
-		return true
-	end
-
-	-- blank / hide: reference only, they freeze the shadow rather than remove it
-	local list
-	local okl, l = pcall(function() return managers.viewport:viewports() end)
-	if okl and type(l) == "table" then list = l end
-	if not list then
-		note("apply refused: no viewport")
-		return false
-	end
-
-	local n, bad = 0, 0
-	for _, entry in ipairs(list) do
-		local g, vp = pcall(function() return entry:vp() end)
-		if g and vp then
-			local ok = pcall(function()
-				if mode.kind == "impl" then
-					vp:set_post_processor_effect("World", Idstring(mode.name), mode.value)
-				else
-					local p = vp:get_post_processor_effect("World", Idstring(mode.name))
-					if p then p:set_visibility(mode.value) end
-				end
-			end)
-			if ok then n = n + 1 else bad = bad + 1 end
-		end
-	end
-	R.applied = n > 0
-	note(string.format("mode %s: %d ok / %d failed (leaves a stale frozen shadow)",
-		R.mode, n, bad))
-	return n > 0
-end
-
--- control -------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- control
+-- ---------------------------------------------------------------------------
 
 function R.enable()
 	R.enabled = true
 	R.applied = apply_impl()
+	set_freeze(true)
 	R.save()
 end
 
 function R.disable()
 	R.enabled = false
-	-- The ambient modifier is destroyed here, which is a real restore. The
-	-- blank/hide modes deliberately write nothing back: set_post_processor_effect
-	-- destroys the pass, so there is no inverse value to write. A restart is the
-	-- only restore for those two.
 	clear_impl()
+	set_freeze(false)
 	R.save()
-	note("disabled")
+	note("disabled; ambient modifier destroyed and shadow rendering resumed")
 end
 
 function R.set_enabled(on)
 	if on == true then R.enable() else R.disable() end
 end
 
-function R.set_mode(mode)
-	if not R.MODES[mode] then return end
-	if R.mode == mode then return end
-	R.mode = mode
-	if R.enabled then apply_impl() end
-	R.save()
-end
-
-function R.set_scale(v)
-	local s = tonumber(v)
-	if s then
-		R.scale = s
-		if R.scale < 0 then R.scale = 0 end
-		if R.scale > 5 then R.scale = 5 end
-	end
-	R.save()
-	-- The modifier captures scale in its closure, so a change needs a rebuild.
-	if R.enabled and R.mode == "ambient" then apply_impl() end
-end
-
 -- A level load rebuilds the environment, which drops the modifier. Re-apply once
--- after a short delay so the new environment exists first. DelayedCalls:Add
--- takes SECONDS. This is the only automatic path, and it calls no rendering
--- function.
+-- after a short delay so the new environment exists first. The only automatic
+-- path in this file, and it calls no rendering function.
 Hooks:Add("LevelLoaded", "skybox_animated_shadow_control_level", function()
 	R.applied = false
-	if R.enabled and R.mode == "ambient" then
+	if R.enabled then
 		pcall(function()
 			DelayedCalls:Add("skybox_shadow_reapply", 2, function()
-				if R.enabled and R.mode == "ambient" and not R.applied then
+				if R.enabled and not R.applied then
 					apply_impl()
+					set_freeze(true)
 				end
 			end)
 		end)
 	end
 end)
 
--- persistence ---------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- persistence
+-- ---------------------------------------------------------------------------
 
 R.SETTINGS_FILE = "shadow_control_settings.json"
 
 function R.save()
 	local f = io.open(SavePath .. R.SETTINGS_FILE, "w")
 	if not f then return end
-	f:write(string.format('{"enabled":%s,"mode":"%s","scale":%.3f}\n',
-		R.enabled and "true" or "false", R.mode, R.scale))
+	f:write(string.format('{"enabled":%s}\n', R.enabled and "true" or "false"))
 	f:close()
 end
 
@@ -293,18 +272,14 @@ function R.load()
 	f:close()
 	if not body then return end
 	if body:match('"enabled"%s*:%s*true') then R.enabled = true end
-	local m = body:match('"mode"%s*:%s*"([%w_]+)"')
-	if m and R.MODES[m] then R.mode = m end
-	local s = body:match('"scale"%s*:%s*([%d%.%-]+)')
-	if s then R.scale = tonumber(s) or R.scale end
 end
 
 function R.status()
-	return string.format("enabled=%s mode=%s scale=%.2f applied=%s errors=%d",
-		tostring(R.enabled), R.mode, R.scale, tostring(R.applied), R.errors)
+	return string.format("enabled=%s applied=%s scale=%.2f errors=%d",
+		tostring(R.enabled), tostring(R.applied), AMBIENT_SCALE, R.errors)
 end
 
 R.load()
 note(R.enabled
-	and ("loaded - enabled, mode " .. R.mode .. " (not applied yet; flip the toggle)")
-	or  ("loaded - idle, mode " .. R.mode))
+	and "loaded - enabled (not applied yet; flip the toggle)"
+	or  "loaded - idle")

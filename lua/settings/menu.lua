@@ -192,19 +192,6 @@ MenuCallbackHandler.sa_shadow_enabled = function(self, item)
 	QuickMenu:new("Sun shadow", m.status(), {}, true)
 end
 
-MenuCallbackHandler.sa_shadow_mode = function(self, item)
-	local m = _G.shadow_control
-	if not m then return end
-	m.set_mode(item:value())
-	QuickMenu:new("Sun shadow", m.status(), {}, true)
-end
-
-MenuCallbackHandler.sa_shadow_brightness = function(self, item)
-	local m = _G.shadow_control
-	if not m then return end
-	m.set_scale(tonumber(item:value()))
-end
-
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
 	local function dds_progress_summary(result)
@@ -395,7 +382,10 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	})
 	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
 
-	-- Shadows tab: drops the sun's cast shadow only.
+	-- Shadows tab: washes the black out of the sun's shadows. One toggle.
+	-- The mode selector and brightness slider were removed - ambient is the only
+	-- approach that works, and blank/hide both leave a stale frozen shadow, so
+	-- offering them was offering something that looks functional and is not.
 	local sh = _G.shadow_control or {}
 	MenuHelper:AddToggle({
 		id = "sa_shadow_enabled",
@@ -405,36 +395,6 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 		menu_id = MENU_SHADOW,
 		value = sh.enabled == true and "on" or "off",
 		priority = 110,
-	})
-	-- Which shadow slot to blank. "rendering" is the obvious candidate and is
-	-- measured NOT to work; the rest are the remaining branches of the same
-	-- subtree, plus "every" as a control case.
-	MenuHelper:AddMultipleChoice({
-		id = "sa_shadow_mode",
-		title = "sa_shadow_mode_title",
-		desc = "sa_shadow_mode_desc",
-		callback = "sa_shadow_mode",
-		menu_id = MENU_SHADOW,
-		items = { "ambient", "blank", "hide" },
-		item_values = { "ambient", "blank", "hide" },
-		value = sh.mode or "ambient",
-		localized_items = false,
-		priority = 100,
-	})
-	-- How hard the ambient flood pushes. The modifier captures this in a closure,
-	-- so moving it rebuilds the modifier.
-	MenuHelper:AddSlider({
-		id = "sa_shadow_brightness",
-		title = "sa_shadow_brightness_title",
-		desc = "sa_shadow_brightness_desc",
-		callback = "sa_shadow_brightness",
-		menu_id = MENU_SHADOW,
-		value = sh.scale or 1.5,
-		min = 0,
-		max = 4,
-		step = 0.1,
-		show_value = true,
-		priority = 90,
 	})
 
 	local config = S.current_config or {}
