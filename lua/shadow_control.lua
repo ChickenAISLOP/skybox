@@ -2,63 +2,87 @@
 -- shadow_control.lua  -  turn the sun's cast shadow off, touch nothing else
 -- ============================================================================
 --
--- STATUS: under test. One configuration is known NOT to work; see MODES below.
+-- CRASH HISTORY - READ THIS FIRST
+-- 2026-10-16 10:21:45, this file crashed PAYDAY 2 with an access violation.
+-- The call was vp:set_post_processor_effect("World", Idstring("shadow_rendering"),
+-- Idstring("empty")) fired from the MenuManagerOnOpenMenu hook. pcall cannot
+-- catch an access violation, so the guard did nothing and the game died.
+-- That is crash 7 of mine. The cause is recorded below under WHAT WENT WRONG;
+-- the fix is that no code path writes to a post processor unless the player
+-- explicitly asked for it.
 --
--- WHAT THIS IS
--- A control that removes the hard black shadow the sun casts (the lamppost
--- stripe across the road, the block shadows on Chinatown) and leaves every
--- other part of the image alone.
+-- WHAT WENT WRONG
+-- The slot name was wrong, and runtime introspection proved it:
+--
+--   shadow_processor     [TextureEffectInstanceInterface 0000000078EF02D0]
+--     methods: modifier, modifiers, set_visibility
+--   shadow_rendering     nil
+--   shadow_modifier      nil
+--   shadow_slice_depths  nil
+--   shadow_slice_overlap nil
+--   deferred             [TextureEffectInstanceInterface 0000000078EF0240]
+--   deferred_lighting    nil
+--   apply_ambient        nil
+--
+-- get_post_processor_effect only resolves TOP-LEVEL post processors. Every
+-- inner effect name in default.environment - shadow_rendering, shadow_modifier,
+-- the slice parameters, deferred_lighting, apply_ambient - returns nil. So the
+-- call I shipped was writing to a slot that does not exist.
+--
+-- That also explains the earlier false positive. At 10:15:05 the same call
+-- "succeeded" on 2 viewports with no error, and the shadow stayed on screen:
+--     [10:15:05] on shadow_rendering -> empty on 2 viewport(s)
+-- A slot that resolves to nil is silently ignored. A successful pcall proves
+-- the call did not fault; it does not prove the engine honoured it. Treating
+-- it as proof is what produced the false "it works".
+--
+-- The real target is shadow_processor, which does resolve.
+--
+-- WHY THERE IS NO HEARTBEAT ANY MORE
+-- The crash happened while a menu was opening, from a GameSetupUpdate-driven
+-- re-assert. ModWorkshop 20568 and Seamlink's mod only ever write from a
+-- persist_script bound to SetVideo - a player action - and neither of them
+-- re-asserts on a timer. Auto-reapplying was my own addition and it is what
+-- killed the game.
+--
+-- There is also no MenuManagerOnCloseMenu hook in this build to pair with
+-- MenuManagerOnOpenMenu, so "is a menu open right now" cannot be answered
+-- reliably, and guessing a managers.menu method is how six of the seven
+-- crashes happened. So nothing is applied automatically. The engine rebuilds
+-- the post-effect tree on a level load, a resolution change and a graphics
+-- change; if the shadow comes back after one of those, flip the toggle off
+-- and on again. That is a two-second fix and it cannot kill the game.
 --
 -- WHAT IT DELIBERATELY DOES NOT TOUCH
--- ModWorkshop 20568 ("Remove Shadows FPS Boost") strips 18 things at once:
--- SSAO, bloom, AA, light adaptation, LEX composite, DOF, depth projection,
--- deferred lighting, ambient, colour grading and more. Everything except the
--- sky looks flat as a result. This only ever writes to the shadow branch of
--- the post-effect tree.
+-- ModWorkshop 20568 and Seamlink's mod strip 18 things at once: SSAO, bloom,
+-- AA, light adaptation, LEX composite, DOF, depth projection, deferred
+-- lighting, ambient, colour grading. Everything except the sky looks flat as a
+-- result. This writes to shadow_processor and nothing else, so deferred
+-- lighting, ambient and every post-process effect are left alone.
 --
--- THE TREE
--- default.environment defines:
---
+-- THE TREE (default.environment)
 --   post_effect
---     |- deferred
+--     |- deferred                      <- lighting; never touched here
 --     |   |- deferred_lighting
 --     |   `- apply_ambient
---     `- shadow_processor
+--     `- shadow_processor              <- the sun's shadow; the only target
 --         `- shadow_rendering
 --             `- shadow_modifier
 --                 |- slice0 .. slice3
 --                 |- shadow_slice_depths
 --                 `- shadow_slice_overlap
 --
--- MECHANISM
--- vp:vp():set_post_processor_effect(pass, name, implementation) swaps the
--- implementation at a slot. "empty" is a real null implementation defined in
--- core/shaders/post_processor.post_processor.
---
--- WHAT WE HAVE MEASURED SO FAR
--- 2026-10-16 10:15:05, mode "rendering":
---     [10:15:05] on shadow_rendering -> empty on 2 viewport(s)
--- No error, no crash, pcall succeeded on both viewports - and the shadow was
--- still on screen. So the call was ACCEPTED AND DID NOTHING. That is a silent
--- no-op, exactly like Underlay:material("sky"):set_variable() was for
--- brightness. A successful pcall proves the call did not fault; it does not
--- prove the engine honoured it.
---
--- The likely reason: "empty" is defined in post_processor.post_processor, not
--- in shadow_processor.post_processor, so it may not be a legal implementation
--- for that slot and is discarded without complaint. Unproven - which is why
--- this is a selector instead of one hardcoded call.
---
 -- CALLS USED, AND THEIR EVIDENCE
 --   managers.viewport:viewports()      ModWorkshop 20568, 25k downloads
 --   vp:vp()                            Environment Editor mod (env.lua)
---   vp:vp():set_post_processor_effect  ModWorkshop 20568
 --   vp:vp():get_post_processor_effect  Environment Editor mod (env.lua)
---   Hooks:Add("GameSetupUpdate", ...)   already used twice in this mod
+--   vp:set_post_processor              Introspection found it on the object
+--   method set_visibility              itself; nothing outside this mod calls it
 --
 -- RESTORE
--- Still unproven. Mod 20568 never restores anything. Restarting the game is
--- always a full restore: the tree is rebuilt from the environment on load.
+-- Still unproven. Neither reference mod restores anything. A game restart is
+-- always a full restore, because the tree is rebuilt from the environment on
+-- load.
 -- ============================================================================
 
 _G.shadow_control = _G.shadow_control or {}
@@ -71,71 +95,30 @@ R._loaded = true
 -- modes
 -- ---------------------------------------------------------------------------
 --
--- Each mode is a list of writes. "every" is what ModWorkshop 20568 does to the
--- shadow branch, and is included as the control case: if "every" does not kill
--- the shadow either, then the shadow is not coming from this tree at all and
--- the whole approach is wrong.
+-- "blank" swaps the whole shadow post processor for the null implementation
+-- "empty", which core/shaders/post_processor.post_processor really does define.
+-- This is exactly what ModWorkshop 20568 does at its line 10, and shadow_processor
+-- is the only shadow-related name that resolves.
+--
+-- "hide" uses set_visibility instead, found by introspection. Kept as a
+-- fallback in case "empty" turns out to be rejected for this slot the same way
+-- it was rejected for the inner names.
 
-local I_EMPTY = "empty"
+local I_EMPTY = Idstring("empty")
 
 R.MODES = {
-	rendering = { { name = "shadow_rendering",   value = I_EMPTY } },
-	processor = { { name = "shadow_processor",   value = I_EMPTY } },
-	modifier  = { { name = "shadow_modifier",    value = I_EMPTY } },
-	ambient   = { { name = "apply_ambient",      value = I_EMPTY } },
-	deferred  = { { name = "deferred_lighting",  value = I_EMPTY } },
-	slices    = {
-		{ name = "shadow_slice_depths",  value = Vector3(0, 0, 0) },
-		{ name = "shadow_slice_overlap", value = Vector3(0, 0, 0) },
-	},
-
-	-- Shadows only. Everything in the shadow branch of the tree, nothing else.
-	shadow_all = {
-		{ name = "shadow_processor",     value = I_EMPTY },
-		{ name = "shadow_rendering",     value = I_EMPTY },
-		{ name = "shadow_modifier",      value = I_EMPTY },
-		{ name = "shadow_slice_depths",  value = Vector3(0, 0, 0) },
-		{ name = "shadow_slice_overlap", value = Vector3(0, 0, 0) },
-	},
-
-	-- CONTROL CASE. Verbatim from Seamlink's "No Shadows or Effects" and ModWorkshop
-	-- 20568. Both are reported to work, so if this does NOT remove the shadow then
-	-- the premise is wrong somewhere else and none of the others mean anything.
-	-- It also strips every post-process effect, which is exactly what the user does
-	-- not want - this mode exists to confirm the reference behaviour, not to ship.
-	ref_full = {
-		{ name = "hdr_post_processor",       value = I_EMPTY },
-		{ name = "post_SSAO",                value = I_EMPTY },
-		{ name = "bloom_combine_post_processor", value = Idstring("bloom_combine_empty") },
-		{ name = "bloom_combine",            value = Idstring("bloom_combine_empty") },
-		{ name = "shadow_processor",         value = I_EMPTY },
-		{ name = "shadow_modifier",          value = I_EMPTY },
-		{ name = "video_anti_alias",         value = Idstring("AA_off") },
-		{ name = "shadow_rendering",         value = I_EMPTY },
-		{ name = "light_adaption",           value = Idstring("no_light_adaption") },
-		{ name = "post_LEX_composite",       value = I_EMPTY },
-		{ name = "post_DOF",                 value = I_EMPTY },
-		{ name = "depth_projection",         value = Idstring("depth_project_empty") },
-		{ name = "shadow_slice_depths",      value = Vector3(0, 0, 0) },
-		{ name = "shadow_slice_overlap",     value = Vector3(0, 0, 0) },
-		{ name = "deferred_lighting",        value = I_EMPTY },
-		{ name = "apply_ambient",            value = I_EMPTY },
-		{ name = "color_grading_post",       value = I_EMPTY },
-	},
+	blank = { { kind = "impl", name = "shadow_processor", value = I_EMPTY } },
+	hide  = { { kind = "vis",  name = "shadow_processor", value = false } },
 }
 
-R.MODE_ORDER = {
-	"off", "rendering", "processor", "modifier",
-	"ambient", "deferred", "slices", "shadow_all", "ref_full",
-}
+R.MODE_ORDER = { "blank", "hide" }
 
 R.enabled = R.enabled == true
-R.mode    = R.mode or "rendering"     -- where we last were: known not to work
+R.mode    = R.mode or "blank"
 
--- runtime state
 R.applied        = nil
+R.last_ok        = false
 R.errors         = 0
-R.disabled_by_error = false
 R.viewports      = 0
 R.probed         = false
 
@@ -143,7 +126,7 @@ local function out(s)
 	if log then log("[shadowctl] " .. s) end
 end
 
-local function dump(lines)
+local function write_log(lines)
 	for _, l in ipairs(lines) do out(l) end
 	local f = io.open(SavePath .. "shadow_control.log", "a")
 	if f then
@@ -152,16 +135,7 @@ local function dump(lines)
 	end
 end
 
--- Throttled: the heartbeat retries while no viewport exists, which is every
--- loading screen. Same reasoning as sky_rotation.lua's note().
-local _seen = {}
 local function note(s)
-	local key = s:gsub("%d+", "N")
-	if _seen[key] then return end
-	_seen[key] = true
-	local n = 0
-	for _ in pairs(_seen) do n = n + 1 end
-	if n > 40 then _seen = {} end
 	out(s)
 	local f = io.open(SavePath .. "shadow_control.log", "a")
 	if f then f:write(os.date("[%Y-%m-%d %H:%M:%S] ") .. s .. "\n"); f:close() end
@@ -171,7 +145,6 @@ end
 -- viewports
 -- ---------------------------------------------------------------------------
 
--- Mirrors ModWorkshop 20568: every viewport, not just the active one.
 local function viewports()
 	if not (managers and managers.viewport) then return nil end
 
@@ -193,27 +166,13 @@ local function viewports()
 end
 
 -- ---------------------------------------------------------------------------
--- introspection - run once, read-only
+-- introspection - read-only, once, on explicit user action only
 -- ---------------------------------------------------------------------------
 --
--- The problem with this feature is that a successful call is indistinguishable
--- from an ignored one. This dumps what the post-processor object actually is,
--- and which method names exist on it, so the next guess is informed instead of
--- guessed. Strictly reads; writes nothing.
-
-local PROBE_NAMES = {
-	"shadow_processor", "shadow_rendering", "shadow_modifier",
-	"shadow_slice_depths", "shadow_slice_overlap",
-	"deferred", "deferred_lighting", "apply_ambient",
-}
-
--- Plausible method names on a post-processor object. Listed rather than called
--- blindly, so we learn the real surface instead of guessing.
-local PROBE_METHODS = {
-	"modifier", "material", "effects", "effect", "modifiers",
-	"implementation", "name", "type", "enable", "set_visibility",
-	"get_implementation", "current_implementation",
-}
+-- This is what found the nil-slot bug, so it stays. It only ever reads, and it
+-- only indexes the object with method names that are already known to exist on
+-- it, because indexing a native object with an unknown key is itself a way to
+-- fault.
 
 local function probe_once()
 	if R.probed then return end
@@ -221,9 +180,12 @@ local function probe_once()
 	if not list then return end
 	local vp = list[1]
 
-	local lines = { "--- introspection ---" }
-
-	for _, name in ipairs(PROBE_NAMES) do
+	local lines = { "--- introspection (read-only) ---" }
+	for _, name in ipairs({
+		"shadow_processor", "deferred", "post_SSAO", "hdr_post_processor",
+		"bloom_combine", "video_anti_alias", "light_adaption",
+		"shadow_rendering", "shadow_modifier", "apply_ambient", "deferred_lighting",
+	}) do
 		local ok, p = pcall(function()
 			return vp:get_post_processor_effect("World", Idstring(name))
 		end)
@@ -232,27 +194,26 @@ local function probe_once()
 		elseif p == nil then
 			lines[#lines+1] = string.format("  %-22s nil", name)
 		else
-			lines[#lines+1] = string.format("  %-22s %s", name, tostring(p))
-			-- Only introspect the first real object; they are all the same class.
-			if not R._probed_methods then
-				local found = {}
-				for _, m in ipairs(PROBE_METHODS) do
-					local g, v = pcall(function() return p[m] end)
-					if g and type(v) == "function" then found[#found+1] = m end
-				end
-				R._probed_methods = true
-				lines[#lines+1] = "    methods: " .. table.concat(found, ", ")
+			-- Only these three; they were observed to exist on this object type.
+			local found = {}
+			for _, m in ipairs({ "modifier", "modifiers", "set_visibility" }) do
+				local g, v = pcall(function() return p[m] end)
+				if g and type(v) == "function" then found[#found+1] = m end
 			end
+			lines[#lines+1] = string.format("  %-22s %s  [%s]", name, tostring(p), table.concat(found, ", "))
 		end
 	end
 	lines[#lines+1] = "--- end introspection ---"
-	dump(lines)
+	write_log(lines)
 	R.probed = true
 end
 
 -- ---------------------------------------------------------------------------
 -- apply
 -- ---------------------------------------------------------------------------
+--
+-- Only ever reached from a menu callback. There is no hook, no timer and no
+-- heartbeat that can call this.
 
 local function apply_impl()
 	if not R.enabled then return end
@@ -260,15 +221,22 @@ local function apply_impl()
 	if not mode then return end
 
 	local list = viewports()
-	if not list then return end
+	if not list then
+		note("apply refused: no viewport")
+		return
+	end
 
-	if R.applied == R.mode then return end
-
+	-- One apply per explicit action, never a loop over time.
 	local ok_count, fail_count, last_err = 0, 0, nil
 	for _, vp in ipairs(list) do
 		for _, w in ipairs(mode) do
 			local ok, err = pcall(function()
-				vp:set_post_processor_effect("World", Idstring(w.name), w.value)
+				if w.kind == "impl" then
+					vp:set_post_processor_effect("World", Idstring(w.name), w.value)
+				else
+					local p = vp:get_post_processor_effect("World", Idstring(w.name))
+					if p then p:set_visibility(w.value) end
+				end
 			end)
 			if ok then ok_count = ok_count + 1 else
 				fail_count = fail_count + 1
@@ -278,23 +246,20 @@ local function apply_impl()
 	end
 
 	R.viewports = #list
-	if ok_count > 0 then
-		R.applied = R.mode
-		local names = {}
-		for _, w in ipairs(mode) do names[#names+1] = w.name end
-		local line = string.format("mode %s: %d write(s) ok on %d viewport(s) [%s]",
-			R.mode, ok_count, #list, table.concat(names, ", "))
-		if fail_count > 0 then
-			line = line .. string.format(" ; %d FAILED last=%s", fail_count, tostring(last_err))
-		end
-		note(line)
+	R.last_ok = ok_count > 0
+	R.applied = R.mode
+
+	local line = string.format("mode %s: %d ok / %d failed on %d viewport(s)",
+		R.mode, ok_count, fail_count, #list)
+	if fail_count > 0 then line = line .. " last=" .. tostring(last_err) end
+	if ok_count == 0 then
+		line = line .. " -- nothing was written; the slot may not resolve"
 	end
+	note(line)
 end
 
 function R.enable()
 	R.enabled = true
-	R.applied = nil
-	R.disabled_by_error = false
 	probe_once()
 	apply_impl()
 	R.save()
@@ -302,12 +267,11 @@ end
 
 function R.disable()
 	R.enabled = false
-	-- Deliberately writes nothing. There is no confirmed inverse implementation,
-	-- and a wrong one could make things worse than leaving it. Restarting the
-	-- game rebuilds the tree from the environment, which is a guaranteed restore.
+	-- Deliberately writes nothing. There is no confirmed inverse, and a wrong
+	-- one could be worse than leaving it. Restarting rebuilds the tree.
 	R.applied = nil
 	R.save()
-	note("disabled; no inverse written (restart restores the tree)")
+	note("disabled; no inverse written (a restart restores the tree)")
 end
 
 function R.set_enabled(on)
@@ -315,64 +279,12 @@ function R.set_enabled(on)
 end
 
 function R.set_mode(mode)
+	if not R.MODES[mode] then return end
 	if R.mode == mode then return end
-	R.mode = R.MODES[mode] and mode or R.mode
-	R.applied = nil          -- force the writes even if the toggle did not move
+	R.mode = mode
 	if R.enabled then apply_impl() end
 	R.save()
 end
-
--- ---------------------------------------------------------------------------
--- heartbeat
--- ---------------------------------------------------------------------------
-
--- The engine rebuilds the tree on a level load, a resolution change and a
--- graphics change, silently reverting every write. Re-assert on a slow
--- heartbeat rather than every frame; R.applied only advances after a
--- successful write, so a viewport coming and going cannot fake success.
-local function heartbeat_impl()
-	if not R.enabled then return end
-	if R.disabled_by_error then return end
-
-	local ok, err = pcall(apply_impl)
-	if not ok then
-		R.errors = R.errors + 1
-		if R.errors <= 3 or R.errors % 300 == 0 then
-			note("apply error #" .. tostring(R.errors) .. ": " .. tostring(err))
-		end
-		if R.errors >= 10 then
-			R.disabled_by_error = true
-			note("auto-disabled after " .. tostring(R.errors) .. " errors; re-enable from the menu")
-		end
-	end
-end
-
-local _tick = 0
-function R.step(t, dt)
-	_tick = _tick + 1
-	if _tick < 120 then return end
-	_tick = 0
-	heartbeat_impl()
-end
-
-Hooks:Add("GameSetupUpdate", "skybox_animated_shadow_control", function(t, dt)
-	R.step(t, dt)
-end)
-
-Hooks:Add("LevelLoaded", "skybox_animated_shadow_control_level", function()
-	R.applied = nil
-	R.errors = 0
-	R.disabled_by_error = false
-end)
-
--- If the player opens the menu while enabled and the engine dropped it in the
--- meantime, this is the moment to put it back - and to run introspection the
--- first time, so the log has the structure in it.
-Hooks:Add("MenuManagerOnOpenMenu", "skybox_animated_shadow_control_menu", function()
-	probe_once()
-	R.applied = nil
-	heartbeat_impl()
-end)
 
 -- ---------------------------------------------------------------------------
 -- persistence
@@ -400,12 +312,12 @@ function R.load()
 end
 
 function R.status()
-	return string.format("enabled=%s mode=%s viewports=%d writes_ok errors=%d%s",
-		tostring(R.enabled), R.mode, R.viewports, R.errors,
-		R.disabled_by_error and " AUTO-DISABLED" or "")
+	return string.format("enabled=%s mode=%s viewports=%d applied=%s",
+		tostring(R.enabled), R.mode, R.viewports, tostring(R.applied))
 end
 
 R.load()
+-- No apply on load, deliberately. Nothing is written until the player asks.
 note(R.enabled
-	and ("loaded - enabled, mode " .. R.mode)
+	and ("loaded - enabled, mode " .. R.mode .. " (not applied; flip the toggle to apply)")
 	or  ("loaded - idle, mode " .. R.mode))
