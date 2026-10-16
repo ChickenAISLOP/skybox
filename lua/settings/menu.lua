@@ -10,6 +10,7 @@ local MENU_GENERATOR = "skybox_animated_generator"
 local MENU_HEISTS = "skybox_animated_heists"
 local MENU_HEIST = "skybox_animated_heist"
 local MENU_ROTATION = "skybox_animated_rotation"
+local MENU_SHADOW = "skybox_animated_shadow"
 local refresh_heist_choices
 local heist_tab_item
 
@@ -173,6 +174,24 @@ MenuCallbackHandler.sa_rot_toggle = function()
 	QuickMenu:new("Sky rotation", m.status(), {}, true)
 end
 
+-- =========================================================================
+-- Sun shadow: one post-processor effect, nothing else.
+-- =========================================================================
+-- shadow_control.lua swaps the single "shadow_rendering" slot for "empty".
+-- SSAO, bloom, AA, DOF, colour grading and ambient are all left alone, which
+-- is the whole point - ModWorkshop 20568 strips 18 effects at once and the
+-- result looks flat because of the other 17.
+
+MenuCallbackHandler.sa_shadow_enabled = function(self, item)
+	local m = _G.shadow_control
+	if not m then
+		QuickMenu:new("Sun shadow", "shadow_control.lua not loaded", {}, true)
+		return
+	end
+	m.set_enabled(item:value() == "on")
+	QuickMenu:new("Sun shadow", m.status(), {}, true)
+end
+
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
 	local function dds_progress_summary(result)
@@ -280,6 +299,7 @@ Hooks:Add("MenuManagerSetupCustomMenus", "skybox_animated_setup", function()
 	MenuHelper:NewMenu(MENU_HEISTS)
 	MenuHelper:NewMenu(MENU_HEIST)
 	MenuHelper:NewMenu(MENU_ROTATION)
+	MenuHelper:NewMenu(MENU_SHADOW)
 end)
 
 local function add_to(menu_id, kind, id, data)
@@ -362,6 +382,18 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	})
 	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
 
+	-- Shadows tab: drops the sun's cast shadow only.
+	local sh = _G.shadow_control or {}
+	MenuHelper:AddToggle({
+		id = "sa_shadow_enabled",
+		title = "sa_shadow_enabled_title",
+		desc = "sa_shadow_enabled_desc",
+		callback = "sa_shadow_enabled",
+		menu_id = MENU_SHADOW,
+		value = sh.enabled == true and "on" or "off",
+		priority = 110,
+	})
+
 	local config = S.current_config or {}
 	local heist_skybox_choices = skybox_choices(config.skybox)
 	add_to(MENU_HEIST, "choice", "heist_skybox", { value = config.skybox or heist_skybox_choices[1], items = heist_skybox_choices, item_values = heist_skybox_choices, localized_items = false, priority = 100 })
@@ -376,9 +408,11 @@ Hooks:Add("MenuManagerBuildCustomMenus", "skybox_animated_build", function(menu_
 	nodes[MENU_HEISTS] = MenuHelper:BuildMenu(MENU_HEISTS)
 	nodes[MENU_HEIST] = MenuHelper:BuildMenu(MENU_HEIST)
 		nodes[MENU_ROTATION] = MenuHelper:BuildMenu(MENU_ROTATION)
+	nodes[MENU_SHADOW] = MenuHelper:BuildMenu(MENU_SHADOW)
 
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_SKYBOX, "sa_skybox_tab_title", "sa_skybox_tab_desc")
 		MenuHelper:AddMenuItem(nodes[MENU_SKYBOX], MENU_ROTATION, "sa_rotation_tab_title", "sa_rotation_tab_desc")
+	MenuHelper:AddMenuItem(nodes[MENU], MENU_SHADOW, "sa_shadow_tab_title", "sa_shadow_tab_desc")
 	heist_tab_item = MenuHelper:AddMenuItem(nodes[MENU], MENU_HEISTS, "sa_heist_tab_title", "sa_heist_tab_desc")
 	if heist_tab_item then heist_tab_item:set_enabled(not S.settings.global_enabled) end
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_GENERATOR, "sa_generator_tab_title", "sa_generator_tab_desc")

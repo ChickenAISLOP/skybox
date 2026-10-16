@@ -48,11 +48,15 @@
 	"sa_rot_speed_title": "Rotation speed",
 	"sa_rot_toggle_desc": "Starts or stops the driver and shows the current status.",
 	"sa_rot_toggle_title": "Rotation status",
-	"sa_rotation_tab_desc": "Rotate and brighten the sky.",
+	"sa_rotation_tab_desc": "Rotate the sky continuously.",
 	"sa_rotation_tab_title": "Sky Animation",
 	"sa_save": "Save",
 	"sa_save_done": "Heist skybox settings saved.",
 	"sa_save_heist_title": "Saved",
+	"sa_shadow_enabled_desc": "Removes the hard black shadow the sun casts, such as the lamppost stripe across the road. Nothing else changes: ambient occlusion, bloom, anti-aliasing, depth of field and colour grading all stay on.",
+	"sa_shadow_enabled_title": "Disable the sun's shadow",
+	"sa_shadow_tab_desc": "Turn off the sun's cast shadow, on its own.",
+	"sa_shadow_tab_title": "Shadows",
 	"sa_skybox_tab_desc": "Global skybox and animation settings.",
 	"sa_skybox_tab_title": "Skybox"
 }
