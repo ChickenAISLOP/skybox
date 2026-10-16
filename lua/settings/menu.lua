@@ -199,6 +199,12 @@ MenuCallbackHandler.sa_shadow_mode = function(self, item)
 	QuickMenu:new("Sun shadow", m.status(), {}, true)
 end
 
+MenuCallbackHandler.sa_shadow_brightness = function(self, item)
+	local m = _G.shadow_control
+	if not m then return end
+	m.set_scale(tonumber(item:value()))
+end
+
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
 	local function dds_progress_summary(result)
@@ -409,11 +415,26 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 		desc = "sa_shadow_mode_desc",
 		callback = "sa_shadow_mode",
 		menu_id = MENU_SHADOW,
-		items = { "blank", "hide" },
-		item_values = { "blank", "hide" },
-		value = sh.mode or "rendering",
+		items = { "ambient", "blank", "hide" },
+		item_values = { "ambient", "blank", "hide" },
+		value = sh.mode or "ambient",
 		localized_items = false,
 		priority = 100,
+	})
+	-- How hard the ambient flood pushes. The modifier captures this in a closure,
+	-- so moving it rebuilds the modifier.
+	MenuHelper:AddSlider({
+		id = "sa_shadow_brightness",
+		title = "sa_shadow_brightness_title",
+		desc = "sa_shadow_brightness_desc",
+		callback = "sa_shadow_brightness",
+		menu_id = MENU_SHADOW,
+		value = sh.scale or 1.5,
+		min = 0,
+		max = 4,
+		step = 0.1,
+		show_value = true,
+		priority = 90,
 	})
 
 	local config = S.current_config or {}
