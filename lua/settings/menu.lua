@@ -192,6 +192,13 @@ MenuCallbackHandler.sa_shadow_enabled = function(self, item)
 	QuickMenu:new("Sun shadow", m.status(), {}, true)
 end
 
+MenuCallbackHandler.sa_shadow_mode = function(self, item)
+	local m = _G.shadow_control
+	if not m then return end
+	m.set_mode(item:value())
+	QuickMenu:new("Sun shadow", m.status(), {}, true)
+end
+
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
 	local function dds_progress_summary(result)
@@ -392,6 +399,21 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 		menu_id = MENU_SHADOW,
 		value = sh.enabled == true and "on" or "off",
 		priority = 110,
+	})
+	-- Which shadow slot to blank. "rendering" is the obvious candidate and is
+	-- measured NOT to work; the rest are the remaining branches of the same
+	-- subtree, plus "every" as a control case.
+	MenuHelper:AddMultipleChoice({
+		id = "sa_shadow_mode",
+		title = "sa_shadow_mode_title",
+		desc = "sa_shadow_mode_desc",
+		callback = "sa_shadow_mode",
+		menu_id = MENU_SHADOW,
+		items = { "off", "rendering", "processor", "modifier", "ambient", "deferred", "slices", "shadow_all", "ref_full" },
+		item_values = { "off", "rendering", "processor", "modifier", "ambient", "deferred", "slices", "shadow_all", "ref_full" },
+		value = sh.mode or "rendering",
+		localized_items = false,
+		priority = 100,
 	})
 
 	local config = S.current_config or {}
