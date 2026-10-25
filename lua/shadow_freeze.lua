@@ -16,16 +16,18 @@
 --   Global._global_light:link(Underlay:get_object(Idstring("d_sun")))
 --   World:set_global_shadow_caster(Global._global_light)
 --
--- So rotating the dome rotates the light, and the shadow crawls with it. The
--- light is a normal object, though, and Light has world-space rotation:
+-- So rotating the dome rotates the light, and the shadow crawls with it.
+-- Light:rotation() is not reliable here: on a linked light it reports the
+-- local rotation (the feeder sets it to zero), even when the dome is at 53
+-- degrees. Work from the parent link instead:
 --
---   Light:rotation()      -> world rotation
---   Light:set_rotation(r) -> set world rotation
---   (Extra Heist Info/pd2_docs/classes/light.lua)
+--   world = parent:rotation() * light:local_rotation()
+--   local = parent:rotation():inverse() * captured_world
 --
--- Capturing the light's world rotation once and re-applying it every frame
--- freezes the shadow without touching the visible sky. The sun painted into
--- the cubemap still moves with the dome; only the shadow stays put.
+-- Re-applying that local rotation every frame holds the light's world
+-- direction at the angle it had when the dome started turning, so the shadow
+-- stays put while the visible sun moves. The parent's world rotation is what
+-- actually changes; the light's local rotation is the lever.
 --
 -- The light is deleted and recreated by UnderlayPathFeeder:apply on every
 -- underlay load, so the capture is repeated whenever the object changes.
@@ -40,7 +42,10 @@ F._loaded = true
 -- On by default: if the sky rotates, a shadow that crawls is the bug.
 F.enabled = F.enabled ~= false
 F.light   = nil
+F.parent  = nil
 F.fixed   = nil
+F.original_local = nil
+F.has_parent_api = false
 F.pins    = 0
 F.errors  = 0
 F.disabled_by_error = false
@@ -87,15 +92,51 @@ function F.capture()
 	local l = current_light()
 	if not l then return false end
 
-	local ok, r = pcall(function() return l:rotation() end)
-	if not ok or not r then
-		note("capture failed: " .. tostring(r))
+	local parent = nil
+	local okp, p = pcall(function() return l:parent() end)
+	if okp and p then parent = p end
+	F.has_parent_api = okp
+
+	local local_rot = nil
+	local okl, lr = pcall(function() return l:local_rotation() end)
+	if okl and lr then local_rot = lr end
+
+	local world = nil
+	if parent then
+		local okr, pr = pcall(function() return parent:rotation() end)
+		if okr and pr then
+			if local_rot then
+				local okm, m = pcall(function() return pr * local_rot end)
+				world = okm and m or pr
+			else
+				world = pr
+			end
+		end
+	end
+	if not world then
+		local okr, r = pcall(function() return l:rotation() end)
+		if okr and r then world = r end
+	end
+	if not world then
+		note("capture failed: no usable rotation")
 		return false
 	end
 
 	F.light = l
-	F.fixed = copy_rotation(r)
-	note(string.format("captured shadow direction at yaw %.2f", F.fixed:yaw()))
+	F.parent = parent
+	F.original_local = local_rot and copy_rotation(local_rot) or nil
+	F.fixed = copy_rotation(world)
+
+	if parent then
+		local okpy, py = pcall(function() return parent:rotation() end)
+		note(string.format(
+			"captured shadow direction at yaw %.2f (parent yaw %.2f, local yaw %.2f)",
+			F.fixed:yaw(),
+			(okpy and py) and py:yaw() or 0,
+			local_rot and local_rot:yaw() or 0))
+	else
+		note(string.format("captured shadow direction at yaw %.2f (no parent)", F.fixed:yaw()))
+	end
 	return true
 end
 
@@ -110,7 +151,25 @@ function F.pin()
 		l = F.light
 	end
 
-	local ok, err = pcall(function() l:set_rotation(F.fixed) end)
+	local ok, err
+	if F.parent then
+		-- Keep the world direction, not the local one. The parent is the dome
+		-- child that is actually turning; counter-rotate the light's local
+		-- rotation so parent * local stays at the captured world angle.
+		ok, err = pcall(function()
+			local pr = F.parent:rotation()
+			l:set_local_rotation(pr:inverse() * F.fixed)
+		end)
+	elseif F.has_parent_api then
+		-- The engine has parent(), but the light is unlinked. Light:rotation()
+		-- can report local space, so forcing it into world space is exactly the
+		-- bug that pointed the sun away. Leave the light alone.
+		return
+	else
+		-- Unknown light object with no parent() method: old fallback.
+		ok, err = pcall(function() l:set_rotation(F.fixed) end)
+	end
+
 	if ok then
 		F.pins = F.pins + 1
 		F.errors = 0
@@ -119,12 +178,28 @@ function F.pin()
 
 	F.errors = F.errors + 1
 	if F.errors == 1 or F.errors % 120 == 0 then
-		note("set_rotation error #" .. tostring(F.errors) .. ": " .. tostring(err))
+		note("pin error #" .. tostring(F.errors) .. ": " .. tostring(err))
 	end
 	if F.errors >= 10 then
 		F.disabled_by_error = true
+		F.restore_light()
 		note("disabled after " .. tostring(F.errors) .. " errors; re-enable from the menu")
 	end
+end
+
+-- Put the light's own local rotation back so it follows the dome again when
+-- the freeze is off. A level load replaces the light, so there is nothing to
+-- restore then.
+function F.restore_light()
+	local l = F.light
+	if l and F.parent and F.original_local and alive(l) then
+		pcall(function() l:set_local_rotation(F.original_local) end)
+	end
+	F.light = nil
+	F.parent = nil
+	F.fixed = nil
+	F.original_local = nil
+	F.has_parent_api = false
 end
 
 function F.set_enabled(on)
@@ -134,17 +209,17 @@ function F.set_enabled(on)
 	if F.enabled then
 		F.capture()
 	else
-		F.light = nil
-		F.fixed = nil
+		F.restore_light()
 	end
 	F.save()
 end
 
 function F.status()
 	return string.format(
-		"enabled=%s light=%s captured=%s pins=%d errors=%d%s",
+		"enabled=%s light=%s parent=%s captured=%s pins=%d errors=%d%s",
 		tostring(F.enabled),
 		F.light and "yes" or "no",
+		F.parent and "yes" or "no",
 		F.fixed and "yes" or "no",
 		F.pins, F.errors,
 		F.disabled_by_error and " AUTO-DISABLED" or "")
@@ -205,7 +280,10 @@ end)
 -- level's rest angle.
 Hooks:Add("LevelLoaded", "skybox_animated_shadow_freeze_level", function()
 	F.light = nil
+	F.parent = nil
 	F.fixed = nil
+	F.original_local = nil
+	F.has_parent_api = false
 	F.pins = 0
 	F.errors = 0
 	F.disabled_by_error = false
