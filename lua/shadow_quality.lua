@@ -36,9 +36,17 @@
 --
 -- FOOTGUN, ON PURPOSE AND DOCUMENTED
 -- While the file is read-only, changing anything in Options > Advanced Video
--- makes the game fail to write and crash. That is the cost of the setting
--- sticking. Switching this toggle off clears the attribute first, so the normal
--- state is never locked. The menu description warns about it.
+-- makes the game fail to write and crash. So the lock does not stay on. It
+-- exists only from a toggle until the next launch, and the block at the bottom
+-- of this file clears it at load - by which point the game has already read the
+-- new value. In the normal running state the file is writable, and the menu
+-- description warns about the window in between.
+--
+-- BOTH DIRECTIONS LOCK, NOT JUST "DISABLE"
+-- Restoring used to write "very high" and leave the file writable, and the game
+-- put "disabled" back on exit. That is the bug that was reported: the restore
+-- appeared to do nothing. A restore has to be protected from the exit write for
+-- exactly the same reason the disable does.
 --
 -- VERIFICATION, NOT HOPE
 -- attrib is a shell call, so it can lie. After setting the attribute this file
@@ -217,20 +225,17 @@ local function apply_to_files(on)
 				end
 			end
 
-			-- Locked while on, so the game cannot undo it on exit. Unlocked while
-			-- off, because a locked file breaks Advanced Video.
-			if on then
-				if set_attrib(p, true) then
-					locked = locked + 1
-				else
-					failed = failed + 1
-				end
-			elseif is_readonly(p) then
-				if set_attrib(p, false) then
-					note("cleared read-only from " .. p)
-				else
-					failed = failed + 1
-				end
+			-- Keep it locked after ANY change, in both directions. The game
+			-- rewrites the file on exit from its own memory, so unlocking here
+			-- would let it undo a restore exactly the way it undid the first
+			-- one. The lock is cleared on the next launch by the block at the
+			-- bottom of this file, after the game has already read the new
+			-- value. The lock therefore only ever exists between a toggle and
+			-- the next launch.
+			if set_attrib(p, true) then
+				locked = locked + 1
+			else
+				failed = failed + 1
 			end
 		end
 	end
@@ -246,7 +251,7 @@ end
 function R.set_enabled(on)
 	R.enabled = on
 	local changed, seen, failed, locked = apply_to_files(on)
-	R.locked = on and locked > 0
+	R.locked = locked > 0
 	R.last = string.format("%s -> %s (%d changed, %d file(s), %d failed, %d locked)",
 		on and "disabled" or "restored", on and "disabled" or R.original,
 		changed, seen, failed, locked)
@@ -262,8 +267,10 @@ function R.disable() R.set_enabled(false) end
 
 function R.status()
 	local head = "Saved. Restart PAYDAY 2 to apply."
-	if R.enabled and not R.locked then
-		head = head .. "\n\nWarning: the settings file is not read-only, so the game may undo this when it closes."
+	if R.locked then
+		head = head .. "\nThe settings file is locked so the game cannot undo this on exit. Avoid Options > Advanced Video until after the restart."
+	else
+		head = head .. "\nWarning: the file is not locked, so the game may undo this when it closes."
 	end
 	return head .. "\n" .. R.last
 end
