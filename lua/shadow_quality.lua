@@ -7,7 +7,7 @@
 -- moves with it, the godray moves with the sun, and the cast shadow crawls
 -- across the floor for the whole rotation. There is no sun_direction value in
 -- the environment to hold the sun still, so the shadow cannot be frozen while
--- the sun moves. The community answer is to switch shadows off outright:
+-- the sun moves. The control is the shadow itself:
 --
 --     <variable name="shadow_quality" value="disabled"/>
 --
@@ -15,38 +15,36 @@
 --
 -- Note the key. The game writes "shadow_quality_default" at a quality tier
 -- (low / high / very high). "disabled" is only accepted on the un-suffixed
--- "shadow_quality" key. Using "disabled" on the _default key is reported not
--- to work, and this file follows that.
+-- "shadow_quality" key.
 --
--- WHY THE FILE AND NOT A LIVE CALL
--- lib/managers/menumanager.lua contains shadow_quality, choose_shadow_quality,
--- set_setting and apply_render_settings, so a runtime route probably exists.
--- It is NOT used here. The object that owns set_setting was never identified,
--- and calling it with a wrong value type on an unknown object is how this
--- project produced its crashes. Writing the file is the route that is known to
--- work, so that is the route this ships.
+-- THE FILE IS READ AT BOOT, NOT PER LEVEL
+-- Renderer settings are parsed during engine startup, long before BLT loads
+-- mods and long before any heist. So a change written here cannot affect the
+-- session that is running, and restarting a heist does not re-read them. Only
+-- relaunching the game does. The menu item says so.
 --
--- THE COST: A RESTART
--- Renderer settings are read during boot, long before BLT loads mods. Writing
--- the file at load therefore cannot affect the session that is already running.
--- The change lands on the next launch. The menu says so.
+-- THE GAME REWRITES THE FILE ON EVERY EXIT - MEASURED
+-- On 2026-10-25 15:37:46 this module wrote "very high", then wrote "disabled"
+-- at 15:38:12 on the next toggle. The file's timestamp was 15:38:19 - seven
+-- seconds after the last mod write, with no log entry from this module at that
+-- time. That was the game rewriting the file from its own in-memory values as
+-- it shut down. A write made during a session is therefore undone at exit.
 --
--- THE READ-ONLY PROBLEM - HONEST LIMITATION
--- The usual advice is to mark the file read-only so the game cannot revert it.
--- Lua cannot do that: io.open writes bytes, and there is no chmod. So this file
--- does NOT set read-only, and does not pretend to. If the game turns out to
--- write its own value back over this one, that has to be fixed by hand:
+-- That is why read-only exists. The usual advice is to set the attribute by
+-- hand; this file does it instead, because os.execute is available here - the
+-- DDS generator button in menu.lua already relies on it.
 --
---     right-click renderer_settings_dx11.xml -> Properties -> Read-only
+-- FOOTGUN, ON PURPOSE AND DOCUMENTED
+-- While the file is read-only, changing anything in Options > Advanced Video
+-- makes the game fail to write and crash. That is the cost of the setting
+-- sticking. Switching this toggle off clears the attribute first, so the normal
+-- state is never locked. The menu description warns about it.
 --
--- which is also what makes Options > Advanced Video crash while it is set, so
--- it is not something to switch on blindly. mods/saves/shadow_quality.log
--- records what was written and when, so whether it survived is checkable.
---
--- WHAT IS RESTORED
--- The original value is read out of the file the first time the toggle is
--- switched on, and written back verbatim when it is switched off. If it cannot
--- be read, "very high" is used, which is what this install shipped with.
+-- VERIFICATION, NOT HOPE
+-- attrib is a shell call, so it can lie. After setting the attribute this file
+-- tries to open the settings file for append: if that fails, the file really is
+-- read-only. The result is written to mods/saves/shadow_quality.log so the
+-- claim is checkable rather than assumed.
 -- ============================================================================
 
 _G.shadow_quality = _G.shadow_quality or {}
@@ -58,6 +56,7 @@ R._loaded = true
 R.enabled  = R.enabled == true
 R.original = R.original or "very high"
 R.writes   = 0
+R.locked   = false
 R.last     = "never"
 
 local function out(s)
@@ -71,7 +70,7 @@ local function note(s)
 	_seen[key] = true
 	local n = 0
 	for _ in pairs(_seen) do n = n + 1 end
-	if n > 60 then _seen = {} end
+	if n > 80 then _seen = {} end
 
 	out(s)
 	local f = io.open(SavePath .. "shadow_quality.log", "a")
@@ -82,11 +81,51 @@ local function note(s)
 end
 
 -- ---------------------------------------------------------------------------
+-- shell
+-- ---------------------------------------------------------------------------
+
+-- Returns success, detail. Handles both os.execute conventions: LuaJIT returns
+-- a status number, Lua 5.2+ returns true/nil, "exit", code.
+local function run(cmd)
+	if type(os.execute) ~= "function" then
+		return false, "os.execute unavailable"
+	end
+	local ok, why, code = os.execute(cmd)
+	local success = (ok == true) or (ok == 0) or (why == "exit" and code == 0)
+	return success == true, string.format("%s %s %s", tostring(ok), tostring(why), tostring(code))
+end
+
+-- A real test, not a guess: a read-only file cannot be opened for append.
+local function is_readonly(path)
+	local f = io.open(path, "ab")
+	if f then
+		f:close()
+		return false
+	end
+	return true
+end
+
+local function set_attrib(path, on)
+	local flag = on and "+R" or "-R"
+	local ok, detail = run(string.format('attrib %s "%s" >nul 2>&1', flag, path))
+	if not ok then
+		note("attrib " .. flag .. " failed for " .. path .. " (" .. detail .. ")")
+		return false
+	end
+	-- attrib can report success and still not have done it, so confirm by use.
+	local actual = is_readonly(path)
+	if actual ~= on then
+		note("attrib " .. flag .. " ran but the file is " ..
+			(actual and "still read-only" or "still writable") .. ": " .. path)
+		return false
+	end
+	return true
+end
+
+-- ---------------------------------------------------------------------------
 -- files
 -- ---------------------------------------------------------------------------
 
--- DX11 installs use renderer_settings_dx11.xml; older ones use the plain name.
--- Both are checked so this works on either.
 local function candidate_paths()
 	local list = {}
 	local la = nil
@@ -145,32 +184,59 @@ local function remember_original(body)
 	end
 end
 
--- Returns changed, seen, failed
+-- Returns changed, seen, failed, locked
 local function apply_to_files(on)
-	local changed, seen, failed = 0, 0, 0
+	local changed, seen, failed, locked = 0, 0, 0, 0
+
 	for _, p in ipairs(candidate_paths()) do
 		local body = read_file(p)
 		if body then
 			seen = seen + 1
+
 			if on then remember_original(body) end
+
 			local new, hit = patch(body, on)
 			if not hit then
 				note("no shadow_quality variable in " .. p)
 				failed = failed + 1
 			elseif new == body then
 				note("already correct: " .. p)
-			elseif write_file(p, new) then
-				changed = changed + 1
-				R.writes = R.writes + 1
-				note("wrote " .. (on and "disabled" or R.original) .. " -> " .. p)
 			else
-				failed = failed + 1
-				note("could not write " .. p)
+				-- Unlock only when a write is actually needed, so the file is not
+				-- left writable when nothing had to change.
+				if is_readonly(p) and not set_attrib(p, false) then
+					failed = failed + 1
+				end
+				if write_file(p, new) then
+					changed = changed + 1
+					R.writes = R.writes + 1
+					note("wrote " .. (on and "disabled" or R.original) .. " -> " .. p)
+				else
+					failed = failed + 1
+					note("could not write " .. p)
+				end
+			end
+
+			-- Locked while on, so the game cannot undo it on exit. Unlocked while
+			-- off, because a locked file breaks Advanced Video.
+			if on then
+				if set_attrib(p, true) then
+					locked = locked + 1
+				else
+					failed = failed + 1
+				end
+			elseif is_readonly(p) then
+				if set_attrib(p, false) then
+					note("cleared read-only from " .. p)
+				else
+					failed = failed + 1
+				end
 			end
 		end
 	end
+
 	if seen == 0 then note("no renderer settings file found") end
-	return changed, seen, failed
+	return changed, seen, failed, locked
 end
 
 -- ---------------------------------------------------------------------------
@@ -179,13 +245,14 @@ end
 
 function R.set_enabled(on)
 	R.enabled = on
-	local changed, seen, failed = apply_to_files(on)
-	R.last = string.format("%s -> %s (%d changed, %d file(s), %d failed)",
+	local changed, seen, failed, locked = apply_to_files(on)
+	R.locked = on and locked > 0
+	R.last = string.format("%s -> %s (%d changed, %d file(s), %d failed, %d locked)",
 		on and "disabled" or "restored", on and "disabled" or R.original,
-		changed, seen, failed)
+		changed, seen, failed, locked)
 	R.save()
-	if on and failed > 0 then
-		note("some files could not be patched - see the lines above")
+	if on and seen > 0 and locked == 0 then
+		note("WARNING: could not make the file read-only - the game will undo this on exit")
 	end
 	return changed
 end
@@ -194,7 +261,11 @@ function R.enable()  R.set_enabled(true)  end
 function R.disable() R.set_enabled(false) end
 
 function R.status()
-	return "Saved. Restart PAYDAY 2 to apply.\n" .. R.last
+	local head = "Saved. Restart PAYDAY 2 to apply."
+	if R.enabled and not R.locked then
+		head = head .. "\n\nWarning: the settings file is not read-only, so the game may undo this when it closes."
+	end
+	return head .. "\n" .. R.last
 end
 
 -- ---------------------------------------------------------------------------
@@ -227,14 +298,26 @@ end
 
 R.load()
 
--- Self-heal: if the toggle is on but the file no longer says disabled, the game
--- put its own value back. Re-assert it. This cannot rescue the current session
--- (settings were read at boot) but it means the next launch is correct.
+-- Self-heal: if the toggle is on, make sure the file still says disabled AND is
+-- still locked. A previous session may have been interrupted before the
+-- attribute was set, or the attribute may have been cleared by hand.
 if R.enabled then
-	local changed = apply_to_files(true)
+	local changed, seen, failed, locked = apply_to_files(true)
+	R.locked = locked > 0
 	if changed > 0 then
 		note("toggle was on but the file had been reverted - rewrote it")
 	end
+elseif not R.enabled then
+	-- Leaving shadows on is the normal state; make sure nothing is still locked
+	-- from an earlier run, because a locked file breaks Advanced Video.
+	for _, p in ipairs(candidate_paths()) do
+		if read_file(p) and is_readonly(p) then
+			if set_attrib(p, false) then
+				note("cleared a leftover read-only lock from " .. p)
+			end
+		end
+	end
 end
 
-note(R.enabled and "loaded - shadows off (" .. R.original .. " when on)" or "loaded - shadows on (" .. R.original .. ")")
+note(string.format("loaded - %s (tier when on: %s, file locked: %s)",
+	R.enabled and "shadows off" or "shadows on", R.original, tostring(R.locked)))
