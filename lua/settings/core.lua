@@ -46,7 +46,7 @@ function S:load()
 	if not valid_default and skyboxes[1] then
 		self.settings.default_skybox = skyboxes[1].id
 	end
-	
+
 	local SA = _G.skybox_animated
 	if SA then
 		SA.enabled = self.settings.enabled

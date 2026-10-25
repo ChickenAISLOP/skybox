@@ -18,8 +18,8 @@
 --
 -- So rotating the dome rotates the light, and the shadow crawls with it.
 -- Light:rotation() is not reliable here: on a linked light it reports the
--- local rotation (the feeder sets it to zero), even when the dome is at 53
--- degrees. Work from the parent link instead:
+-- local rotation (the feeder sets it to zero). The live log recorded local yaw
+-- 0.00 against parent yaw 63.89. Work from the parent link instead:
 --
 --   world = parent:rotation() * light:local_rotation()
 --   local = parent:rotation():inverse() * captured_world
@@ -31,6 +31,9 @@
 --
 -- The light is deleted and recreated by UnderlayPathFeeder:apply on every
 -- underlay load, so the capture is repeated whenever the object changes.
+--
+-- This module is always on. It has no menu tab or toggle: while the sky
+-- rotation driver is running, the shadow direction is held automatically.
 -- ============================================================================
 
 _G.shadow_freeze = _G.shadow_freeze or {}
@@ -39,8 +42,8 @@ local F = _G.shadow_freeze
 if F._loaded then return end
 F._loaded = true
 
--- On by default: if the sky rotates, a shadow that crawls is the bug.
-F.enabled = F.enabled ~= false
+-- Always on. The freeze is part of the rotation behaviour, not a user option.
+F.enabled = true
 F.light   = nil
 F.parent  = nil
 F.fixed   = nil
@@ -102,9 +105,11 @@ function F.capture()
 	if okl and lr then local_rot = lr end
 
 	local world = nil
+	local parent_rot = nil
 	if parent then
 		local okr, pr = pcall(function() return parent:rotation() end)
 		if okr and pr then
+			parent_rot = pr
 			if local_rot then
 				local okm, m = pcall(function() return pr * local_rot end)
 				world = okm and m or pr
@@ -128,11 +133,10 @@ function F.capture()
 	F.fixed = copy_rotation(world)
 
 	if parent then
-		local okpy, py = pcall(function() return parent:rotation() end)
 		note(string.format(
 			"captured shadow direction at yaw %.2f (parent yaw %.2f, local yaw %.2f)",
 			F.fixed:yaw(),
-			(okpy and py) and py:yaw() or 0,
+			parent_rot and parent_rot:yaw() or 0,
 			local_rot and local_rot:yaw() or 0))
 	else
 		note(string.format("captured shadow direction at yaw %.2f (no parent)", F.fixed:yaw()))
@@ -183,7 +187,7 @@ function F.pin()
 	if F.errors >= 10 then
 		F.disabled_by_error = true
 		F.restore_light()
-		note("disabled after " .. tostring(F.errors) .. " errors; re-enable from the menu")
+		note("disabled after " .. tostring(F.errors) .. " errors; reload the level")
 	end
 end
 
@@ -202,6 +206,7 @@ function F.restore_light()
 	F.has_parent_api = false
 end
 
+-- Kept as a small diagnostic API. No menu exposes it; the module starts on.
 function F.set_enabled(on)
 	F.enabled = on == true
 	F.errors = 0
@@ -211,7 +216,6 @@ function F.set_enabled(on)
 	else
 		F.restore_light()
 	end
-	F.save()
 end
 
 function F.status()
@@ -224,34 +228,6 @@ function F.status()
 		F.pins, F.errors,
 		F.disabled_by_error and " AUTO-DISABLED" or "")
 end
-
--- ---------------------------------------------------------------------------
--- persistence
--- ---------------------------------------------------------------------------
-
-F.SETTINGS_FILE = "shadow_freeze_settings.json"
-
-function F.save()
-	local f = io.open(SavePath .. F.SETTINGS_FILE, "w")
-	if not f then return end
-	f:write(string.format('{"enabled":%s}\n', F.enabled and "true" or "false"))
-	f:close()
-end
-
-function F.load()
-	local f = io.open(SavePath .. F.SETTINGS_FILE, "r")
-	if not f then return end
-	local body = f:read("*all")
-	f:close()
-	if not body then return end
-	if body:match('"enabled"%s*:%s*false') then
-		F.enabled = false
-	elseif body:match('"enabled"%s*:%s*true') then
-		F.enabled = true
-	end
-end
-
-F.load()
 
 -- ---------------------------------------------------------------------------
 -- per frame
@@ -289,4 +265,4 @@ Hooks:Add("LevelLoaded", "skybox_animated_shadow_freeze_level", function()
 	F.disabled_by_error = false
 end)
 
-note(string.format("loaded - toggle=%s", F.enabled and "on" or "off"))
+note("loaded - always on")

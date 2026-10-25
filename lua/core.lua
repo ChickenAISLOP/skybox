@@ -33,7 +33,6 @@ SA.heist_environments = {
 	cage = "sky_1846_low_sun_nice_clouds",
 	cane = "sky_1931_low_sun",
 	cas = "sky_1224_clear_sky",
-	cane = "sky_1931_low_sun",
 	crojob1 = "sky_1830_low_sun_clouds",
 	crojob2 = "sky_1830_low_sun_clouds",
 	crojob3 = "sky_1830_low_sun_clouds",
@@ -97,9 +96,7 @@ SA.heist_environments = {
 	haunted = "sky_1930_sunset_heavy_clouds",
 	chill_combat = "sky_1345_clear_sky",
 	pex = "sky_1345_clear_sky",
-	crojob2 = "sky_1830_low_sun_clouds",
 	sah = "sky_1345_clear_sky",
-	hvh = "sky_city_clear",
 	pent = "sky_1345_clear_sky",
 	ranc = "sky_1345_clear_sky",
 	brb = "sky_1345_clear_sky",
@@ -108,7 +105,6 @@ SA.heist_environments = {
 	nmh = "sky_1345_clear_sky",
 	sand = "sky_1345_clear_sky",
 	are = "sky_1345_clear_sky",
-	cane = "sky_1931_low_sun",
 	pbm = "sky_1345_clear_sky",
 	corp = "sky_1345_clear_sky",
 	deep = "sky_1345_clear_sky",
@@ -148,12 +144,12 @@ end
 function SA:get_current_heist_config(heist)
 	heist = heist or (Global.level_data and Global.level_data.level_id)
 	if not heist then return nil end
-	
+
 	-- Check if heist has custom config
 	if self.heist_skyboxes[heist] then
 		return self.heist_skyboxes[heist]
 	end
-	
+
 	-- Return default for this heist
 	local env_name = self.heist_environments[heist] or "sky_1345_clear_sky"
 	return {

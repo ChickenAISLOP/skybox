@@ -10,7 +10,6 @@ local MENU_GENERATOR = "skybox_animated_generator"
 local MENU_HEISTS = "skybox_animated_heists"
 local MENU_HEIST = "skybox_animated_heist"
 local MENU_ROTATION = "skybox_animated_rotation"
-local MENU_SHADOW = "skybox_animated_shadow"
 local refresh_heist_choices
 local heist_tab_item
 
@@ -31,20 +30,6 @@ end
 Hooks:Add("LocalizationManagerPostInit", "skybox_animated_loc", function(loc)
 	loc:load_localization_file(S._path .. "loc/english.txt")
 end)
-
--- Freeze the shadow direction while the sky dome rotates. shadow_freeze.lua
--- holds the shadow-casting light at a fixed world rotation; the visible sun
--- still moves with the cubemap.
-
-MenuCallbackHandler.sa_shadow_freeze = function(self, item)
-	local m = _G.shadow_freeze
-	if not m then
-		QuickMenu:new("Shadows", "shadow_freeze.lua not loaded", {}, true)
-		return
-	end
-	m.set_enabled(item:value() == "on")
-	QuickMenu:new("Shadows", m.status(), {}, true)
-end
 
 local function refresh_active_menu(menu_id)
 	local menu = MenuHelper:GetMenu(menu_id)
@@ -82,14 +67,12 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 	MenuCallbackHandler.sa_set_enabled = function(self, item)
 		set("enabled", item:value() == "on")
 		S:sync()
-		S:save()
 	end
 	MenuCallbackHandler.sa_set_global_enabled = function(self, item)
 		local enabled = item:value() == "on"
 		set("global_enabled", enabled)
 		if heist_tab_item then heist_tab_item:set_enabled(not enabled) end
 		S:sync()
-		S:save()
 	end
 	MenuCallbackHandler.sa_set_default_skybox = choice("default_skybox", true)
 	MenuCallbackHandler.sa_set_developer_logs = toggle("developer_logs", false)
@@ -142,11 +125,6 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 		end
 	end
 
-	-- Dump the sky internals probe. Read-only: it only reads values and writes
-	-- sky_probe_report.txt to the BLT save folder.
-
-	-- Read-only inspection of the environment swap API. No writes.
-
 	-- =========================================================================
 	-- Sky rotation driver: enable, and speed in degrees per second.
 	-- =========================================================================
@@ -154,62 +132,42 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 	MenuCallbackHandler.sa_rot_enabled = function(self, item)
 		local m = _G.sky_rotation
 		if not m then
-		QuickMenu:new("Sky rotation", "sky_rotation.lua not loaded", {}, true)
-		return
+			QuickMenu:new("Sky rotation", "sky_rotation.lua not loaded", {}, true)
+			return
+		end
+		m.set_enabled(item:value() == "on")
+		QuickMenu:new("Sky rotation", m.status(), {}, true)
 	end
-	m.set_enabled(item:value() == "on")
-	QuickMenu:new("Sky rotation", m.status(), {}, true)
-end
 
--- Brightness removed. Two dead routes, both measured:
---   1. Underlay:material("sky"):set_variable() is a silent no-op - it returns
---      without raising and the value reads back unchanged.
---   2. The environment data path underlay_effect/sky_top/sky_intensity exists
---      only in Tier 2 and 3 environments, 51 of 225. The other 174 are Tier 1
---      legacy and have no sky intensity key under any path name.
--- A control that works on 23% of levels is worse than no control, because it
--- looks functional. See 10_provenance_ledger.md in the report repo.
-
-MenuCallbackHandler.sa_rot_speed = function(self, item)
-	local m = _G.sky_rotation
-	if not m then return end
-	m.set_speed(tonumber(item:value()))
-end
-
--- One-shot toggle from the diagnostics side, so it is reachable even if the
--- player never opens the rotation tab.
-MenuCallbackHandler.sa_rot_toggle = function()
-	local m = _G.sky_rotation
-	if not m then
-		QuickMenu:new("Sky rotation", "sky_rotation.lua not loaded", {}, true)
-		return
+	MenuCallbackHandler.sa_rot_speed = function(self, item)
+		local m = _G.sky_rotation
+		if not m then return end
+		m.set_speed(tonumber(item:value()))
 	end
-	m.set_enabled(not m.enabled)
-	QuickMenu:new("Sky rotation", m.status(), {}, true)
-end
 
--- The sun shadow. Rotating the dome rotates the shadow-casting light too,
--- because the light is linked to the dome's d_sun child. shadow_freeze.lua
--- captures the light's world rotation and re-applies it every frame, so the
--- shadow stays put while the dome turns. Approaches that did not work:
---   - set_post_processor_effect("shadow_processor", "empty") freezes the shadow
---     into a stale shape that matches no geometry, because shadow_processor
---     RENDERS the shadow map while deferred CONSUMES it.
---   - blanking deferred takes every light in the level with it: black.
---   - flooding PostAmbientColorFeeder lightens the whole scene but never
---     removes the shadow.
+	-- One-shot toggle from the diagnostics side, so it is reachable even if the
+	-- player never opens the rotation tab.
+	MenuCallbackHandler.sa_rot_toggle = function()
+		local m = _G.sky_rotation
+		if not m then
+			QuickMenu:new("Sky rotation", "sky_rotation.lua not loaded", {}, true)
+			return
+		end
+		m.set_enabled(not m.enabled)
+		QuickMenu:new("Sky rotation", m.status(), {}, true)
+	end
 
-		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
+	-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
 	local function dds_progress_summary(result)
-	result = tostring(result or "")
-	local done, total, remaining = result:match("DDS (%d+)/(%d+) done; (%d+) remaining")
-	if not done then return "" end
-	local text = managers.localization:text("sa_dds_generator_progress")
-	return string.format(text, done, total, remaining)
-end
+		result = tostring(result or "")
+		local done, total, remaining = result:match("DDS (%d+)/(%d+) done; (%d+) remaining")
+		if not done then return "" end
+		local text = managers.localization:text("sa_dds_generator_progress")
+		return string.format(text, done, total, remaining)
+	end
 
-MenuCallbackHandler.sa_generate_dds_from_png = function()
+	MenuCallbackHandler.sa_generate_dds_from_png = function()
 		if S._dds_generator_running then
 			QuickMenu:new(managers.localization:text("sa_dds_generator_title"), managers.localization:text("sa_dds_generator_running"), {}, true)
 			return
@@ -306,7 +264,6 @@ Hooks:Add("MenuManagerSetupCustomMenus", "skybox_animated_setup", function()
 	MenuHelper:NewMenu(MENU_HEISTS)
 	MenuHelper:NewMenu(MENU_HEIST)
 	MenuHelper:NewMenu(MENU_ROTATION)
-	MenuHelper:NewMenu(MENU_SHADOW)
 end)
 
 local function add_to(menu_id, kind, id, data)
@@ -332,7 +289,6 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	-- Skybox tab: global animation settings and per-heist selection.
 	add_to(MENU_SKYBOX, "toggle", "enabled", { value = s.enabled, priority = 110 })
 	add_to(MENU_SKYBOX, "toggle", "global_enabled", { value = s.global_enabled, priority = 109 })
-	
 
 	local skybox_ids = skybox_choices(s.default_skybox)
 	add_to(MENU_SKYBOX, "choice", "default_skybox", { value = s.default_skybox or skybox_ids[1], items = skybox_ids, item_values = skybox_ids, localized_items = false, priority = 101 })
@@ -343,7 +299,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	for _, h in ipairs(heists) do
 		table.insert(heist_items, h)
 	end
-	
+
 	MenuHelper:AddMultipleChoice({
 		id = "sa_heist_list",
 		title = "sa_heist_list_title",
@@ -389,18 +345,6 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	})
 	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
 
-	-- Shadows tab: hold the shadow still while the dome turns.
-	local sf = _G.shadow_freeze or {}
-	MenuHelper:AddToggle({
-		id = "sa_shadow_freeze",
-		title = "sa_shadow_freeze_title",
-		desc = "sa_shadow_freeze_desc",
-		callback = "sa_shadow_freeze",
-		menu_id = MENU_SHADOW,
-		value = sf.enabled ~= false and "on" or "off",
-		priority = 120,
-	})
-
 	local config = S.current_config or {}
 	local heist_skybox_choices = skybox_choices(config.skybox)
 	add_to(MENU_HEIST, "choice", "heist_skybox", { value = config.skybox or heist_skybox_choices[1], items = heist_skybox_choices, item_values = heist_skybox_choices, localized_items = false, priority = 100 })
@@ -414,12 +358,10 @@ Hooks:Add("MenuManagerBuildCustomMenus", "skybox_animated_build", function(menu_
 	nodes[MENU_GENERATOR] = MenuHelper:BuildMenu(MENU_GENERATOR)
 	nodes[MENU_HEISTS] = MenuHelper:BuildMenu(MENU_HEISTS)
 	nodes[MENU_HEIST] = MenuHelper:BuildMenu(MENU_HEIST)
-		nodes[MENU_ROTATION] = MenuHelper:BuildMenu(MENU_ROTATION)
-	nodes[MENU_SHADOW] = MenuHelper:BuildMenu(MENU_SHADOW)
+	nodes[MENU_ROTATION] = MenuHelper:BuildMenu(MENU_ROTATION)
 
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_SKYBOX, "sa_skybox_tab_title", "sa_skybox_tab_desc")
-		MenuHelper:AddMenuItem(nodes[MENU_SKYBOX], MENU_ROTATION, "sa_rotation_tab_title", "sa_rotation_tab_desc")
-	MenuHelper:AddMenuItem(nodes[MENU], MENU_SHADOW, "sa_shadow_tab_title", "sa_shadow_tab_desc")
+	MenuHelper:AddMenuItem(nodes[MENU_SKYBOX], MENU_ROTATION, "sa_rotation_tab_title", "sa_rotation_tab_desc")
 	heist_tab_item = MenuHelper:AddMenuItem(nodes[MENU], MENU_HEISTS, "sa_heist_tab_title", "sa_heist_tab_desc")
 	if heist_tab_item then heist_tab_item:set_enabled(not S.settings.global_enabled) end
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_GENERATOR, "sa_generator_tab_title", "sa_generator_tab_desc")
@@ -431,7 +373,7 @@ refresh_heist_choices = function(menu_id)
 	local menu = MenuHelper:GetMenu(menu_id)
 	if not (menu and menu._items) then return end
 	if not S.current_heist then return end
-	
+
 	local config = S.current_config
 	local skybox_ids = skybox_choices(config.skybox)
 	-- With nothing to show, leave the existing options untouched. Clearing them
@@ -452,7 +394,7 @@ refresh_heist_choices = function(menu_id)
 				item:set_value(config.skybox or current or skybox_ids[1])
 			end
 		end
-		
+
 		if p and p.name == "sa_heist_enabled" then item:set_value(config.enabled ~= false and "on" or "off") end
 	end
 end

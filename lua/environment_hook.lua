@@ -1,11 +1,9 @@
 -- Replaces the game's Underlay sky material texture, using the same game API
 -- used by BeardLib's SkyTexturePathFeeder. No sky-dome unit lookup is needed.
 --
--- This mod deliberately does only one thing at runtime: swap the sky texture.
--- The brightness/tint controls, the rotation, UV-scrolling and per-frame
--- animation-frame systems were removed because the stock sky material exposes
--- no uv_speed/pattern variables, so they never had any visible effect and the
--- frame swapping cost framerate.
+-- Runtime responsibilities are deliberately narrow: apply the selected texture
+-- and expose a diagnostics dump. Sky rotation lives in sky_rotation.lua; holding
+-- the sun's shadow still lives in shadow_freeze.lua.
 _G.skybox_animated_env = _G.skybox_animated_env or {}
 local Env = _G.skybox_animated_env
 
@@ -78,7 +76,12 @@ local function selected_skybox(SA, settings, heist)
 		if not cfg or cfg.enabled == false then return nil end
 		id = cfg.skybox
 	end
-	for _, skybox in ipairs((_G.skybox_animated_loader and _G.skybox_animated_loader.skyboxes()) or {}) do
+	local L = _G.skybox_animated_loader
+	if L and L.get then
+		local found = L.get(id)
+		if found then return found end
+	end
+	for _, skybox in ipairs((L and L.skyboxes()) or {}) do
 		if skybox.id == id then return skybox end
 	end
 	return nil
@@ -138,8 +141,6 @@ local function apply_texture(skybox)
 	sa_log("setter_failed", "Application:set_material_texture failed for " .. tostring(skybox.id) .. ": " .. tostring(result), true)
 	return false
 end
-
-local update_impl
 
 local function update_impl(t, dt)
 	local SA = _G.skybox_animated

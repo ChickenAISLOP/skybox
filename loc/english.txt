@@ -53,10 +53,6 @@
 	"sa_save": "Save",
 	"sa_save_done": "Heist skybox settings saved.",
 	"sa_save_heist_title": "Saved",
-	"sa_shadow_freeze_desc": "Keeps the sun's shadow still while the sky rotates. Applies immediately.",
-	"sa_shadow_freeze_title": "Freeze shadow direction",
-	"sa_shadow_tab_desc": "Stop the shadow crawling.",
-	"sa_shadow_tab_title": "Shadows",
 	"sa_skybox_tab_desc": "Global skybox and animation settings.",
 	"sa_skybox_tab_title": "Skybox"
 }

@@ -14,3 +14,7 @@
 *.jpeg  binary
 *.glb   binary
 *.zip   binary
+
+# Repository metadata, not part of a distributable archive.
+.gitattributes export-ignore
+.gitignore     export-ignore

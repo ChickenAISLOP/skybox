@@ -7,7 +7,7 @@ works on every heist without touching any vanilla file. Nine skyboxes ship with
 it, and you can bake your own from PNGs without leaving the main menu.
 
 It also **rotates the sky**, per frame, at any speed you like - see the
-**Sky Animation** tab below.
+**Sky Animation** tab below - and keeps the sun's shadow fixed while it turns.
 
 ## Requirements
 
@@ -51,6 +51,10 @@ press **Save Heist**.
 | **Rotate the sky** | Starts and stops the rotation driver. Off restores the angle the level loaded with. |
 | **Rotation speed** | Degrees per second, `-360` to `360` in steps of `0.5`. Negative reverses. `4.0` is a full turn in 90 seconds. |
 | **Rotation status** | Starts or stops the driver and prints its current state. |
+
+While rotation is running, the mod holds the shadow-casting light at the angle the
+level loaded with, so the visible sky moves but the shadow does not crawl. This is
+always on and has no separate menu toggle.
 
 Settings persist to `saves/sky_rotation_settings.json`, so the driver stays on across
 heists and restarts once you have enabled it.
@@ -97,7 +101,8 @@ Source images are not committed to this repo, so a fresh clone has an empty
 
 ## Scope
 
-Two things: **swap the sky texture**, and **rotate the sky**.
+Three things: **swap the sky texture**, **rotate it**, and **hold the sun's shadow
+still** while it turns.
 
 Rotation drives `sky_orientation/rotation`, a live environment value:
 
@@ -110,6 +115,12 @@ h:editor_set_value(key, R.angle)
 
 It is time-based rather than frame-based, so the rate is identical at 30, 60, 144 or
 240 fps - only the number of writes changes.
+
+The shadow needs separate work because the global shadow-casting light is linked to
+the dome's `d_sun` child, so it turns with the sky. `shadow_freeze.lua` captures the
+light's world rotation when rotation starts and counter-rotates its local rotation
+every frame. The visible sun moves with the sky; the shadow does not. This is always
+on while rotation runs, with no menu toggle.
 
 ### What is NOT possible
 
@@ -145,6 +156,7 @@ inside `PackageManager:_script_data` when BeardLib is installed.
 | File | Role |
 |---|---|
 | `lua/sky_rotation.lua` | Drives `sky_orientation/rotation` every frame. Self-heals after a level load and persists its settings. |
+| `lua/shadow_freeze.lua` | Holds the shadow-casting light's world rotation while the sky turns. Always on. |
 | `lua/environment_hook.lua` | Hooks `GameSetupUpdate` and re-applies the texture via `Application:set_material_texture`. Also owns the diagnostics dump. |
 | `lua/loader.lua` | Scans `input/dds/`, validates each file, and registers DB entries. |
 | `lua/core.lua` | Per-heist config and the heist-to-skybox fallback table. |
@@ -170,6 +182,7 @@ Two details worth knowing:
 | `saves/skybox_animated.log` | Log output |
 | `saves/sky_rotation_settings.json` | Rotation enabled state and speed |
 | `saves/sky_rotation.log` | Rotation driver log |
+| `saves/shadow_freeze.log` | Shadow capture / pin diagnostics |
 
 ## Troubleshooting
 

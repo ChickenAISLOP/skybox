@@ -26,7 +26,7 @@ local RESERVED = { default = true, black = true }
 L.problems = {}
 L.reg = {}
 L.skybox_list = {}
-L.animations = {}
+L.by_id = {}
 
 local function problem(msg)
 	L.problems[#L.problems + 1] = msg
@@ -222,8 +222,14 @@ function L.skyboxes()
 	return L.skybox_list
 end
 
--- The mod does no scanning or loading while sitting in the menus. Everything is
--- deferred until a heist actually starts, which keeps the main menu responsive.
+-- O(1) lookup for the per-frame texture path. The old linear scan ran on every
+-- GameSetupUpdate tick; this map is rebuilt whenever the folder is rescanned.
+function L.get(id)
+	return id and L.by_id[id] or nil
+end
+
+-- Texture loading is deferred until a heist actually starts. The one-time
+-- directory scan still happens at load so menu lists are populated.
 function L.in_heist()
 	return not not (Global and Global.level_data and Global.level_data.level_id)
 end
@@ -246,7 +252,6 @@ function L.ensure_texture_ready(db_path)
 	return false
 end
 
-
 function L.rescan()
 	-- Drop cached probes so regenerated DDS files are picked up.
 	probe_cache = {}
@@ -262,6 +267,8 @@ function L.rescan()
 	end
 	table.sort(list, function(a, b) return a.id < b.id end)
 	L.skybox_list = list
+	L.by_id = {}
+	for _, s in ipairs(list) do L.by_id[s.id] = s end
 	log("[skybox_animated] rescan " .. #L.skybox_list .. " skyboxes")
 
 	-- Material configs were removed: Underlay does not expose
@@ -278,23 +285,12 @@ end
 -- lists empty and crashed the multiple-choice item. It is cheap now that the
 -- animation frames are gone (only the static DDS files are probed).
 L._scanned = false
-L._active = false
 
 function L.ensure_scanned()
 	if L._scanned then return end
 	L._scanned = true
 	L.rescan()
 end
-
-function L.activate()
-	L._active = true
-	L.ensure_scanned()
-end
-
-Hooks:Add("GameSetupUpdate", "skybox_animated_activate_in_heist", function()
-	if L._active or not L.in_heist() then return end
-	L.activate()
-end)
 
 -- Scan at load so the skybox choice lists are populated before any menu builds.
 L.ensure_scanned()
