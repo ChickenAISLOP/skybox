@@ -54,6 +54,16 @@ MenuCallbackHandler.sa_shadows_removed = function(self, item)
 	QuickMenu:new("Shadows", m.status(), {}, true)
 end
 
+MenuCallbackHandler.sa_shadow_freeze = function(self, item)
+	local m = _G.shadow_freeze
+	if not m then
+		QuickMenu:new("Shadows", "shadow_freeze.lua not loaded", {}, true)
+		return
+	end
+	m.set_enabled(item:value() == "on")
+	QuickMenu:new("Shadows", m.status(), {}, true)
+end
+
 local function refresh_active_menu(menu_id)
 	local menu = MenuHelper:GetMenu(menu_id)
 	if not (menu and menu._items) then return end
@@ -197,19 +207,22 @@ MenuCallbackHandler.sa_rot_toggle = function()
 end
 
 -- The sun shadow: earlier attempts are kept because the negative results are
--- worth keeping, and because one of them was my own mistake:
+-- worth keeping, and because two of them were my own mistakes:
 --   - set_post_processor_effect("shadow_processor", "empty") freezes the shadow
 --     into a stale shape that matches no geometry, because shadow_processor
 --     RENDERS the shadow map while deferred CONSUMES it.
 --   - blanking deferred instead takes every light in the level with it: black.
 --   - flooding PostAmbientColorFeeder lightens the whole scene but never
 --     removes the shadow.
---   - "shadow_quality has no Lua binding" was WRONG. It has no binding in
---     core/lib, which is the only place that got searched, but
---     lib/managers/menumanager.lua contains shadow_quality,
---     choose_shadow_quality, set_setting and apply_render_settings. The working
---     control is the setting itself; shadow_quality.lua writes it to
---     renderer_settings*.xml, and it takes effect on the next launch.
+--   - "shadow_quality has no Lua binding" was WRONG. lib/managers/menumanager.lua
+--     drives it through RenderSettings + Application:apply_render_settings().
+--     shadow_quality.lua now does the same, and accepts the engine's userdata
+--     RenderSettings object instead of requiring a Lua table.
+--   - "the shadow cannot be frozen" was also WRONG. SkyRotationFeeder rotates
+--     rp_skydome, the shadow light is linked to its d_sun child, and
+--     Light:set_rotation() is world-space. shadow_freeze.lua re-applies the
+--     captured world rotation every frame, so the shadow stays put while the
+--     dome rotates.
 
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
@@ -401,8 +414,19 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	})
 	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
 
-	-- Shadows tab: switch the sun's shadow off, because it travels with the sun
-	-- and the sun travels with the rotating dome.
+	-- Shadows tab. The freeze is the default: it keeps shadows on and stops
+	-- them crawling. Removing the shadow is the blunt fallback.
+	local sf = _G.shadow_freeze or {}
+	MenuHelper:AddToggle({
+		id = "sa_shadow_freeze",
+		title = "sa_shadow_freeze_title",
+		desc = "sa_shadow_freeze_desc",
+		callback = "sa_shadow_freeze",
+		menu_id = MENU_SHADOW,
+		value = sf.enabled ~= false and "on" or "off",
+		priority = 120,
+	})
+
 	local sh = _G.shadow_quality or {}
 	MenuHelper:AddToggle({
 		id = "sa_shadows_removed",

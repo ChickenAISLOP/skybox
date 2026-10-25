@@ -116,6 +116,14 @@ function R.start()
 	R.running  = true
 	R.errors   = 0
 	R.disabled_by_error = false
+
+	-- Freeze the shadow from the angle the level loaded with, before the first
+	-- write moves the dome. shadow_freeze.lua does the pinning; this only tells
+	-- it which world rotation to hold.
+	if _G.shadow_freeze and _G.shadow_freeze.capture then
+		_G.shadow_freeze.capture()
+	end
+
 	note(string.format("started at %.2f deg, speed %.3f deg/s", cur, R.speed))
 	return true
 end

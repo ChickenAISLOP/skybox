@@ -4,10 +4,11 @@
 --
 -- WHY THIS EXISTS
 -- The sky dome rotates and the sun is baked into the sky cubemap, so the sun
--- moves with it, the godray moves with the sun, and the cast shadow crawls
--- across the floor for the whole rotation. There is no sun_direction value in
--- the environment to hold the sun still, so the shadow cannot be frozen while
--- the sun moves. The control is the shadow itself.
+-- moves with it and the godray moves with the sun. The cast shadow moves too,
+-- because the shadow light is linked to the dome's d_sun child. That shadow is
+-- frozen by shadow_freeze.lua; this module is the blunt fallback that removes
+-- it entirely, for players who would rather lose the shadow than watch it
+-- crawl. See shadow_freeze.lua for the light-level mechanism.
 --
 -- HOW THE GAME ACTUALLY EXPOSES THIS  (from decompiled lib/managers/menumanager.lua)
 --
@@ -277,14 +278,27 @@ end
 -- Resolves RenderSettings / Application once per call. Everything is probed
 -- with pcall because indexing a half-initialised engine object raises, and a
 -- raised error in a menu callback is a broken menu.
+--
+-- RenderSettings is an engine object, not necessarily a Lua table. The first
+-- version accepted only "table", which is exactly why a real install logged
+-- engine_api=no. Accept userdata too, and return the reason when it still is
+-- not usable so the log says which one is missing.
 local function api()
 	local rs  = safe(function() return RenderSettings end)
 	local app = safe(function() return Application end)
-	if type(rs) ~= "table" then return nil end
-	if type(app) ~= "table" and type(app) ~= "userdata" then return nil end
+	local trs, tapp = type(rs), type(app)
+
+	if trs ~= "table" and trs ~= "userdata" then
+		return nil, "RenderSettings is " .. trs
+	end
+	if tapp ~= "table" and tapp ~= "userdata" then
+		return nil, "Application is " .. tapp
+	end
 
 	local apply = safe(function() return app.apply_render_settings end)
-	if type(apply) ~= "function" then return nil end
+	if type(apply) ~= "function" then
+		return nil, "Application.apply_render_settings is " .. type(apply)
+	end
 
 	return {
 		rs    = rs,
@@ -292,7 +306,7 @@ local function api()
 		apply = apply,
 		reset = safe(function() return app.reset_render_settings end),
 		save  = safe(function() return app.save_render_settings end),
-	}
+	}, nil
 end
 
 local function read_field(a)
@@ -303,9 +317,9 @@ end
 
 -- Returns ok, detail.
 local function live_apply(on)
-	local a = api()
+	local a, why = api()
 	if not a then
-		return false, "RenderSettings/Application not available"
+		return false, why or "RenderSettings/Application not available"
 	end
 
 	local ok, err
@@ -435,9 +449,10 @@ else
 	end
 end
 
-local a = api()
-note(string.format("loaded - toggle=%s tier=%s engine_api=%s live_field=%s",
+local a, why = api()
+note(string.format("loaded - toggle=%s tier=%s engine_api=%s (%s) live_field=%s",
 	R.enabled and "on" or "off",
 	R.original,
 	a and "yes" or "no",
+	a and "ok" or tostring(why),
 	a and tostring(read_field(a)) or "n/a"))
