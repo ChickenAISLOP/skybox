@@ -55,7 +55,7 @@
 	"sa_save_heist_title": "Saved",
 	"sa_shadow_tab_desc": "Stop the shadow crawling.",
 	"sa_shadow_tab_title": "Shadows",
-	"sa_shadows_removed_desc": "Stops the sun's shadow. Applies on next game launch, not a heist restart. While on, the settings file is locked - do not open Advanced Video or the game will crash.",
+	"sa_shadows_removed_desc": "Stops the sun's shadow. Applies immediately.",
 	"sa_shadows_removed_title": "Remove the sun's shadow",
 	"sa_skybox_tab_desc": "Global skybox and animation settings.",
 	"sa_skybox_tab_title": "Skybox"
