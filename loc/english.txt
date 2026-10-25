@@ -53,10 +53,10 @@
 	"sa_save": "Save",
 	"sa_save_done": "Heist skybox settings saved.",
 	"sa_save_heist_title": "Saved",
-	"sa_shadow_enabled_desc": "Holds the sun's shadow still while the sky keeps turning. It does not remove the shadow.",
-	"sa_shadow_enabled_title": "Freeze the sun's shadow",
 	"sa_shadow_tab_desc": "Stop the shadow crawling.",
 	"sa_shadow_tab_title": "Shadows",
+	"sa_shadows_removed_desc": "Stops the sun's shadow entirely. Takes effect after restarting PAYDAY 2.",
+	"sa_shadows_removed_title": "Remove the sun's shadow",
 	"sa_skybox_tab_desc": "Global skybox and animation settings.",
 	"sa_skybox_tab_title": "Skybox"
 }

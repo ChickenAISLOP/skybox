@@ -19,7 +19,7 @@
     },
     {
       "hook_id": "lib/setups/gamesetup",
-      "script_path": "lua/shadow_control.lua"
+      "script_path": "lua/shadow_quality.lua"
     }
   ]
 }

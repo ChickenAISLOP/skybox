@@ -33,20 +33,25 @@ Hooks:Add("LocalizationManagerPostInit", "skybox_animated_loc", function(loc)
 end)
 
 -- =========================================================================
--- Freeze the sun's shadow.
+-- Remove the sun's shadow.
 -- =========================================================================
--- The sky dome rotates, the sun rides on it, so the godray sweeps and drags the
--- shadow across the floor. This stops the shadow being redrawn, which holds it
--- still while the sky keeps turning. It does NOT remove the shadow.
+-- The sky dome rotates, and the sun is baked into the sky cubemap, so the sun
+-- and its shadow travel with the dome. There is no sun_direction value to hold
+-- the sun still, so the only way to stop the shadow crawling is to switch the
+-- shadow off.
+--
+-- This rewrites renderer_settings*.xml. Renderer settings are read at boot,
+-- long before mods load, so the change lands on the NEXT launch. It cannot be
+-- applied to the session that is already running.
 
-MenuCallbackHandler.sa_shadow_enabled = function(self, item)
-	local m = _G.shadow_control
+MenuCallbackHandler.sa_shadows_removed = function(self, item)
+	local m = _G.shadow_quality
 	if not m then
-		QuickMenu:new("Sun shadow", "shadow_control.lua not loaded", {}, true)
+		QuickMenu:new("Shadows", "shadow_quality.lua not loaded", {}, true)
 		return
 	end
 	m.set_enabled(item:value() == "on")
-	QuickMenu:new("Sun shadow", m.status(), {}, true)
+	QuickMenu:new("Shadows", m.status(), {}, true)
 end
 
 local function refresh_active_menu(menu_id)
@@ -191,16 +196,20 @@ MenuCallbackHandler.sa_rot_toggle = function()
 	QuickMenu:new("Sky rotation", m.status(), {}, true)
 end
 
--- The sun shadow feature was removed. It is recorded in the commit history and
--- in the report repo, because the negative results are worth keeping:
+-- The sun shadow: earlier attempts are kept because the negative results are
+-- worth keeping, and because one of them was my own mistake:
 --   - set_post_processor_effect("shadow_processor", "empty") freezes the shadow
 --     into a stale shape that matches no geometry, because shadow_processor
 --     RENDERS the shadow map while deferred CONSUMES it.
 --   - blanking deferred instead takes every light in the level with it: black.
 --   - flooding PostAmbientColorFeeder lightens the whole scene but never
 --     removes the shadow.
---   - the only working control is Options > Graphics > SHADOW QUALITY, which is
---     native and has no Lua binding (0 hits for shadow_quality in core/lib).
+--   - "shadow_quality has no Lua binding" was WRONG. It has no binding in
+--     core/lib, which is the only place that got searched, but
+--     lib/managers/menumanager.lua contains shadow_quality,
+--     choose_shadow_quality, set_setting and apply_render_settings. The working
+--     control is the setting itself; shadow_quality.lua writes it to
+--     renderer_settings*.xml, and it takes effect on the next launch.
 
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
@@ -392,13 +401,14 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	})
 	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
 
-	-- Shadows tab: holds the sun's shadow still while the sky keeps turning.
-	local sh = _G.shadow_control or {}
+	-- Shadows tab: switch the sun's shadow off, because it travels with the sun
+	-- and the sun travels with the rotating dome.
+	local sh = _G.shadow_quality or {}
 	MenuHelper:AddToggle({
-		id = "sa_shadow_enabled",
-		title = "sa_shadow_enabled_title",
-		desc = "sa_shadow_enabled_desc",
-		callback = "sa_shadow_enabled",
+		id = "sa_shadows_removed",
+		title = "sa_shadows_removed_title",
+		desc = "sa_shadows_removed_desc",
+		callback = "sa_shadows_removed",
 		menu_id = MENU_SHADOW,
 		value = sh.enabled == true and "on" or "off",
 		priority = 110,
