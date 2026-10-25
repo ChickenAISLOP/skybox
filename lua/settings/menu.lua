@@ -32,27 +32,9 @@ Hooks:Add("LocalizationManagerPostInit", "skybox_animated_loc", function(loc)
 	loc:load_localization_file(S._path .. "loc/english.txt")
 end)
 
--- =========================================================================
--- Remove the sun's shadow.
--- =========================================================================
--- The sky dome rotates, and the sun is baked into the sky cubemap, so the sun
--- and its shadow travel with the dome. There is no sun_direction value to hold
--- the sun still, so the only way to stop the shadow crawling is to switch the
--- shadow off.
---
--- This rewrites renderer_settings*.xml. Renderer settings are read at boot,
--- long before mods load, so the change lands on the NEXT launch. It cannot be
--- applied to the session that is already running.
-
-MenuCallbackHandler.sa_shadows_removed = function(self, item)
-	local m = _G.shadow_quality
-	if not m then
-		QuickMenu:new("Shadows", "shadow_quality.lua not loaded", {}, true)
-		return
-	end
-	m.set_enabled(item:value() == "on")
-	QuickMenu:new("Shadows", m.status(), {}, true)
-end
+-- Freeze the shadow direction while the sky dome rotates. shadow_freeze.lua
+-- holds the shadow-casting light at a fixed world rotation; the visible sun
+-- still moves with the cubemap.
 
 MenuCallbackHandler.sa_shadow_freeze = function(self, item)
 	local m = _G.shadow_freeze
@@ -206,23 +188,16 @@ MenuCallbackHandler.sa_rot_toggle = function()
 	QuickMenu:new("Sky rotation", m.status(), {}, true)
 end
 
--- The sun shadow: earlier attempts are kept because the negative results are
--- worth keeping, and because two of them were my own mistakes:
+-- The sun shadow. Rotating the dome rotates the shadow-casting light too,
+-- because the light is linked to the dome's d_sun child. shadow_freeze.lua
+-- captures the light's world rotation and re-applies it every frame, so the
+-- shadow stays put while the dome turns. Approaches that did not work:
 --   - set_post_processor_effect("shadow_processor", "empty") freezes the shadow
 --     into a stale shape that matches no geometry, because shadow_processor
 --     RENDERS the shadow map while deferred CONSUMES it.
---   - blanking deferred instead takes every light in the level with it: black.
+--   - blanking deferred takes every light in the level with it: black.
 --   - flooding PostAmbientColorFeeder lightens the whole scene but never
 --     removes the shadow.
---   - "shadow_quality has no Lua binding" was WRONG. lib/managers/menumanager.lua
---     drives it through RenderSettings + Application:apply_render_settings().
---     shadow_quality.lua now does the same, and accepts the engine's userdata
---     RenderSettings object instead of requiring a Lua table.
---   - "the shadow cannot be frozen" was also WRONG. SkyRotationFeeder rotates
---     rp_skydome, the shadow light is linked to its d_sun child, and
---     Light:set_rotation() is world-space. shadow_freeze.lua re-applies the
---     captured world rotation every frame, so the shadow stays put while the
---     dome rotates.
 
 		-- Reads "DDS 123/847 done; 724 remaining" out of a generator status line.
 	-- Returns a localized sentence, or "" when the line carries no counts.
@@ -414,8 +389,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 	})
 	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
 
-	-- Shadows tab. The freeze is the default: it keeps shadows on and stops
-	-- them crawling. Removing the shadow is the blunt fallback.
+	-- Shadows tab: hold the shadow still while the dome turns.
 	local sf = _G.shadow_freeze or {}
 	MenuHelper:AddToggle({
 		id = "sa_shadow_freeze",
@@ -425,17 +399,6 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 		menu_id = MENU_SHADOW,
 		value = sf.enabled ~= false and "on" or "off",
 		priority = 120,
-	})
-
-	local sh = _G.shadow_quality or {}
-	MenuHelper:AddToggle({
-		id = "sa_shadows_removed",
-		title = "sa_shadows_removed_title",
-		desc = "sa_shadows_removed_desc",
-		callback = "sa_shadows_removed",
-		menu_id = MENU_SHADOW,
-		value = sh.enabled == true and "on" or "off",
-		priority = 110,
 	})
 
 	local config = S.current_config or {}
