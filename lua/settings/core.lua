@@ -37,6 +37,9 @@ function S:load()
 			self.settings[k] = v
 		end
 	end
+	-- The per-heist UI is gone, so the global skybox is always active. Ignore
+	-- stale "global_enabled = false" values in old settings files.
+	self.settings.global_enabled = true
 	local loader = _G.skybox_animated_loader
 	local skyboxes = loader and type(loader.skyboxes) == "function" and loader.skyboxes() or {}
 	local valid_default = false
@@ -66,7 +69,7 @@ function S:sync()
 	local SA = _G.skybox_animated
 	if SA then
 		SA.enabled = self.settings.enabled
-		SA.global_enabled = self.settings.global_enabled
+		SA.global_enabled = true
 	end
 end
 

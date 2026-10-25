@@ -1,17 +1,12 @@
 if not core then
 	dofile(ModPath .. "lua/settings/core.lua")
 end
-core:import("CoreMenuItemOption")
 local S = _G.skybox_animated_settings
 
 local MENU = "skybox_animated_options"
 local MENU_SKYBOX = "skybox_animated_skybox"
 local MENU_GENERATOR = "skybox_animated_generator"
-local MENU_HEISTS = "skybox_animated_heists"
-local MENU_HEIST = "skybox_animated_heist"
 local MENU_ROTATION = "skybox_animated_rotation"
-local refresh_heist_choices
-local heist_tab_item
 
 -- The multiple-choice item crashes if its option list is empty, so never hand it
 -- an empty list and never clear options we cannot immediately refill.
@@ -30,22 +25,6 @@ end
 Hooks:Add("LocalizationManagerPostInit", "skybox_animated_loc", function(loc)
 	loc:load_localization_file(S._path .. "loc/english.txt")
 end)
-
-local function refresh_active_menu(menu_id)
-	local menu = MenuHelper:GetMenu(menu_id)
-	if not (menu and menu._items) then return end
-	for _, item in pairs(menu._items) do
-		local p = item._parameters
-		if p and p.name then
-			local key = p.name:match("^sa_(.+)$")
-			if key and S.settings[key] ~= nil then
-				local v = S.settings[key]
-				if type(v) == "boolean" then v = v and "on" or "off" end
-				item:set_value(v)
-			end
-		end
-	end
-end
 
 Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_manager)
 	local function set(key, value, repaint)
@@ -68,51 +47,12 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 		set("enabled", item:value() == "on")
 		S:sync()
 	end
-	MenuCallbackHandler.sa_set_global_enabled = function(self, item)
-		local enabled = item:value() == "on"
-		set("global_enabled", enabled)
-		if heist_tab_item then heist_tab_item:set_enabled(not enabled) end
-		S:sync()
-	end
 	MenuCallbackHandler.sa_set_default_skybox = choice("default_skybox", true)
 	MenuCallbackHandler.sa_set_developer_logs = toggle("developer_logs", false)
-
-	-- Heist-specific callbacks
-	local function set_heist_config(path, value)
-		local cfg = S.current_config
-		if path == "skybox" or path == "enabled" then
-			cfg[path] = value
-		else
-			local section, key = path:match("^([^.]+)%.(.+)$")
-			cfg[section] = cfg[section] or {}
-			cfg[section][key] = value
-		end
-	end
-	MenuCallbackHandler.sa_set_heist_skybox = function(self, item) set_heist_config("skybox", item:value()) end
-	MenuCallbackHandler.sa_set_heist_enabled = function(self, item) set_heist_config("enabled", item:value() == "on") end
-
-	MenuCallbackHandler.sa_select_heist = function(self, item)
-		local heist = item:value()
-		S:load_heist_config(heist)
-		menu_manager:open_node(MENU_HEIST, {})
-	end
-
-	MenuCallbackHandler.sa_save_heist = function()
-		S:save_heist_config()
-		S:save()
-		QuickMenu:new(managers.localization:text("sa_save_heist_title"), managers.localization:text("sa_save_done"), {}, true)
-	end
-
-	MenuCallbackHandler.sa_reset_heist = function()
-		S:reset_heist_config()
-		refresh_active_menu(MENU_HEIST)
-		QuickMenu:new(managers.localization:text("sa_reset_heist_title"), managers.localization:text("sa_reset_done"), {}, true)
-	end
 
 	MenuCallbackHandler.sa_rescan_skyboxes = function()
 		local loader = _G.skybox_animated_loader
 		if loader then loader.rescan() end
-		refresh_heist_choices(MENU_HEIST)
 		QuickMenu:new(managers.localization:text("sa_rescan_title"), managers.localization:text("sa_rescan_done"), {}, true)
 	end
 	MenuCallbackHandler.sa_dump_diagnostics = function()
@@ -223,7 +163,6 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 			if result:match("^DONE") then
 				local loader = _G.skybox_animated_loader
 				if loader then loader.rescan() end
-				refresh_heist_choices(MENU_HEIST)
 				QuickMenu:new(managers.localization:text("sa_dds_generator_title"), managers.localization:text("sa_dds_generator_done") .. " " .. result, {}, true)
 			elseif result:match("^CANCELLED") then
 				-- Report the exact done/remaining split instead of a bare
@@ -253,16 +192,12 @@ Hooks:Add("MenuManagerInitialize", "skybox_animated_callbacks", function(menu_ma
 		end
 		QuickMenu:new(managers.localization:text("sa_dds_generator_title"), dds_progress_summary(body) .. "\n\n" .. body, {}, true)
 	end
-
-	MenuCallbackHandler.sa_save = function() S:save() end
 end)
 
 Hooks:Add("MenuManagerSetupCustomMenus", "skybox_animated_setup", function()
 	MenuHelper:NewMenu(MENU)
 	MenuHelper:NewMenu(MENU_SKYBOX)
 	MenuHelper:NewMenu(MENU_GENERATOR)
-	MenuHelper:NewMenu(MENU_HEISTS)
-	MenuHelper:NewMenu(MENU_HEIST)
 	MenuHelper:NewMenu(MENU_ROTATION)
 end)
 
@@ -286,32 +221,12 @@ end
 Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function()
 	local s = S.settings
 
-	-- Skybox tab: global animation settings and per-heist selection.
+	-- Skybox tab: one global skybox plus animation settings.
 	add_to(MENU_SKYBOX, "toggle", "enabled", { value = s.enabled, priority = 110 })
-	add_to(MENU_SKYBOX, "toggle", "global_enabled", { value = s.global_enabled, priority = 109 })
 
 	local skybox_ids = skybox_choices(s.default_skybox)
 	add_to(MENU_SKYBOX, "choice", "default_skybox", { value = s.default_skybox or skybox_ids[1], items = skybox_ids, item_values = skybox_ids, localized_items = false, priority = 101 })
 	add_to(MENU_SKYBOX, "toggle", "developer_logs", { value = s.developer_logs, priority = 100 })
-
-	local heists = S:get_heist_list()
-	local heist_items = {}
-	for _, h in ipairs(heists) do
-		table.insert(heist_items, h)
-	end
-
-	MenuHelper:AddMultipleChoice({
-		id = "sa_heist_list",
-		title = "sa_heist_list_title",
-		desc = "sa_heist_list_desc",
-		callback = "sa_select_heist",
-		items = heist_items,
-		item_values = heist_items,
-		value = heist_items[1] or "branchbank",
-		menu_id = MENU_HEISTS,
-		priority = 100,
-		localized_items = false,
-	})
 
 	-- Generator tab contains resource scanning/generation actions.
 	MenuHelper:AddButton({ id = "sa_generate_dds_from_png", title = "sa_generate_dds_title", desc = "sa_generate_dds_desc", callback = "sa_generate_dds_from_png", menu_id = MENU_GENERATOR, priority = 110 })
@@ -344,63 +259,17 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "skybox_animated_populate", function
 		priority = 100,
 	})
 	MenuHelper:AddButton({ id = "sa_rot_toggle", title = "sa_rot_toggle_title", desc = "sa_rot_toggle_desc", callback = "sa_rot_toggle", menu_id = MENU_ROTATION, priority = 90 })
-
-	local config = S.current_config or {}
-	local heist_skybox_choices = skybox_choices(config.skybox)
-	add_to(MENU_HEIST, "choice", "heist_skybox", { value = config.skybox or heist_skybox_choices[1], items = heist_skybox_choices, item_values = heist_skybox_choices, localized_items = false, priority = 100 })
-	add_to(MENU_HEIST, "toggle", "heist_enabled", { value = config.enabled ~= false, priority = 99 })
-	MenuHelper:AddButton({ id = "sa_save_heist", title = "sa_save_heist_title", desc = "sa_save_done", callback = "sa_save_heist", menu_id = MENU_HEIST, priority = 10 })
 end)
 
 Hooks:Add("MenuManagerBuildCustomMenus", "skybox_animated_build", function(menu_manager, nodes)
 	nodes[MENU] = MenuHelper:BuildMenu(MENU)
 	nodes[MENU_SKYBOX] = MenuHelper:BuildMenu(MENU_SKYBOX)
 	nodes[MENU_GENERATOR] = MenuHelper:BuildMenu(MENU_GENERATOR)
-	nodes[MENU_HEISTS] = MenuHelper:BuildMenu(MENU_HEISTS)
-	nodes[MENU_HEIST] = MenuHelper:BuildMenu(MENU_HEIST)
 	nodes[MENU_ROTATION] = MenuHelper:BuildMenu(MENU_ROTATION)
 
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_SKYBOX, "sa_skybox_tab_title", "sa_skybox_tab_desc")
 	MenuHelper:AddMenuItem(nodes[MENU_SKYBOX], MENU_ROTATION, "sa_rotation_tab_title", "sa_rotation_tab_desc")
-	heist_tab_item = MenuHelper:AddMenuItem(nodes[MENU], MENU_HEISTS, "sa_heist_tab_title", "sa_heist_tab_desc")
-	if heist_tab_item then heist_tab_item:set_enabled(not S.settings.global_enabled) end
 	MenuHelper:AddMenuItem(nodes[MENU], MENU_GENERATOR, "sa_generator_tab_title", "sa_generator_tab_desc")
 	MenuHelper:AddMenuItem(nodes.blt_options, MENU, "sa_menu_title", "sa_menu_desc")
 	log("[skybox_animated] Mod Options menu registered")
-end)
-
-refresh_heist_choices = function(menu_id)
-	local menu = MenuHelper:GetMenu(menu_id)
-	if not (menu and menu._items) then return end
-	if not S.current_heist then return end
-
-	local config = S.current_config
-	local skybox_ids = skybox_choices(config.skybox)
-	-- With nothing to show, leave the existing options untouched. Clearing them
-	-- and adding none makes reload_item() dereference nil and crash the game.
-	if #skybox_ids == 0 then return end
-	local names = _G.skybox_animated and _G.skybox_animated:get_available_skyboxes() or {}
-
-	for _, item in pairs(menu._items) do
-		local p = item._parameters
-		if p and p.name == "sa_heist_skybox" and item.clear_options then
-			local current = item:value()
-			item:clear_options()
-			for i, id in ipairs(skybox_ids) do
-				item:add_option(CoreMenuItemOption.ItemOption:new(nil, { text_id = names[i] or id, value = id, localize = false }))
-			end
-			if #skybox_ids > 0 then
-				item:_show_options(item._callback_handler)
-				item:set_value(config.skybox or current or skybox_ids[1])
-			end
-		end
-
-		if p and p.name == "sa_heist_enabled" then item:set_value(config.enabled ~= false and "on" or "off") end
-	end
-end
-
-Hooks:Add("MenuManagerOnOpenMenu", "skybox_animated_heist_menu_populate", function(menu_manager, menu_name)
-	if menu_name == MENU_HEIST then
-		refresh_heist_choices(MENU_HEIST)
-	end
 end)

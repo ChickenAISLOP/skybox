@@ -33,16 +33,8 @@ Everything lives under **Mod Options > skybox**.
 | Option | Effect |
 |---|---|
 | **Mod Enabled** | Master on/off switch. |
-| **Global Heist Skybox** | Applies one skybox to every heist. Turning this off lets you set each heist separately. |
-| **Global Custom Skybox** | The skybox used while Global Heist Skybox is on. |
+| **Global Custom Skybox** | The skybox applied to every heist. |
 | **Developer Logs** | Verbose `[SA]` output to the game log and `skybox_animated.log`. |
-
-### Heists tab
-
-Disabled while Global Heist Skybox is on. Turn it off first.
-
-Pick a heist, choose its **Heist Skybox**, toggle **Heist Override Enabled**, then
-press **Save Heist**.
 
 ### Sky Animation tab
 
@@ -159,7 +151,7 @@ inside `PackageManager:_script_data` when BeardLib is installed.
 | `lua/shadow_freeze.lua` | Holds the shadow-casting light's world rotation while the sky turns. Always on. |
 | `lua/environment_hook.lua` | Hooks `GameSetupUpdate` and re-applies the texture via `Application:set_material_texture`. Also owns the diagnostics dump. |
 | `lua/loader.lua` | Scans `input/dds/`, validates each file, and registers DB entries. |
-| `lua/core.lua` | Per-heist config and the heist-to-skybox fallback table. |
+| `lua/core.lua` | Global config plus legacy per-heist data compatibility. |
 | `lua/settings/` | The Mod Options menu. |
 | `data/skyboxes.json` | Display names for menu entries. |
 | `tools/` | Python PNG-to-DDS generator (plus two offline Blender helpers). |
@@ -178,7 +170,7 @@ Two details worth knowing:
 | Path | Contents |
 |---|---|
 | `saves/skybox_animated_settings.json` | Global settings |
-| `saves/skybox_animated_heists.json` | Per-heist overrides |
+| `saves/skybox_animated_heists.json` | Legacy per-heist overrides (ignored) |
 | `saves/skybox_animated.log` | Log output |
 | `saves/sky_rotation_settings.json` | Rotation enabled state and speed |
 | `saves/sky_rotation.log` | Rotation driver log |

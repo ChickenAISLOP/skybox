@@ -122,9 +122,9 @@ function SA:load_heist_config()
 	if data and data.heists then
 		self.heist_skyboxes = data.heists
 	end
-	if data and data.global_enabled ~= nil then
-		self.global_enabled = data.global_enabled
-	end
+	-- Per-heist overrides are no longer selectable; keep the legacy save data
+	-- readable, but always use the global skybox.
+	self.global_enabled = true
 	if data and data.default_skybox then
 		self.default_skybox = data.default_skybox
 	end
