@@ -28,9 +28,6 @@ function Env.count_work()
 	Env.work_count = (Env.work_count or 0) + 1
 end
 
--- os.clock() reports CPU time, which is near zero at startup and diverges from
--- wall time whenever the process idles. Timing follows game time instead, so
--- update() accumulates its own monotonic clock from dt.
 local function now_seconds()
 	return Env.now or 0
 end
@@ -128,7 +125,6 @@ local function apply_texture(skybox)
 
 	local ok, result = pcall(Application.set_material_texture, Application, material, IDS_DIFFUSE, texture_ids, IDS_NORMAL)
 	if not ok then
-		-- Match BeardLib's call convention exactly (Application:set_material_texture).
 		ok, result = pcall(function()
 			return Application:set_material_texture(material, IDS_DIFFUSE, texture_ids, IDS_NORMAL)
 		end)

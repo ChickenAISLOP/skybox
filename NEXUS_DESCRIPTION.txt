@@ -1,0 +1,79 @@
+[b]Skybox Animated[/b]
+
+[b]TL;DR:[/b] Replace any PAYDAY 2 sky with your own textures, rotate the sky per-frame at any speed, and keep the sun's shadow fixed while it turns. Nine skyboxes ship with the mod. Bake your own from PNGs in-game via Mod Options > skybox > Generator. No brightness or tint controls (not possible in the engine). Requires BLT + BeardLib.
+
+[b]What it does:[/b]
+- Swaps the Underlay sky material texture on every heist without touching vanilla files.
+- Rotates the sky continuously per frame at any speed (-360 to 360 degrees/sec).
+- Holds the shadow-casting light at its loaded angle so the shadow stays still while the sky moves.
+- Generator bakes PNGs from input/png/ into DDS files in input/dds/generated/.
+
+[b]Requirements:[/b]
+- PAYDAY 2
+- BLT (https://modworkshop.net/mod/58342)
+- BeardLib (https://modworkshop.net/mod/14924)
+- Python with Pillow, numpy and quicktex - only if you want to bake your own images (py -m pip install -r requirements.txt)
+
+[b]Install:[/b]
+
+[b]SuperBLT:[/b] Downloader > Install from GitHub > select this repository
+
+[b]Manual:[/b] Drop this folder into your PAYDAY 2 mods/ directory and restart.
+
+[b]Using it:[/b]
+
+Everything lives under Mod Options > skybox.
+
+[b]Skybox tab:[/b]
+- Mod Enabled - Master on/off switch.
+- Global Custom Skybox - The skybox applied to every heist.
+- Developer Logs - Verbose [SA] output to the game log and skybox_animated.log.
+
+[b]Sky Animation tab:[/b]
+- Rotate the sky - Starts/stops the rotation driver.
+- Rotation speed - Degrees per second, -360 to 360 in steps of 0.5.
+- Rotation status - Starts/stops the driver and prints state.
+
+Shadow freeze is always on while rotation runs - no separate toggle.
+
+[b]Generator tab:[/b]
+- Generate DDS from PNGs - Bakes input/png/ into input/dds/generated/.
+- Check DDS Progress - Shows done/remaining counts.
+- Rescan Skyboxes - Rescans input/dds/.
+- Generate SA Logs - Diagnostic report.
+
+[b]Adding your own skybox:[/b]
+
+1. Drop a PNG into input/png/.
+2. Mod Options > skybox > Generator > Generate DDS from PNGs.
+3. Pick it from the skybox dropdown.
+
+Baked files land in input/dds/generated/ automatically. Add a label in data/skyboxes.json if you want a friendly name. See input/README.txt for naming (_df / _il / _cm) and format requirements.
+
+You can also drop game-ready DDS (DXT1/DXT5) or .texture files directly into input/dds/.
+
+[b]Shipped skyboxes:[/b]
+- 0 - Violet Mandala
+- 51 - Rose Mandala
+- 67 - Electric Storm
+- girly - Portrait
+- nightsky - Night Sky Panorama
+- prototype - Night Horizon
+- sky - Violet Nebula
+- skyproto - Pixel Bloom
+- welcome - Glitch Storm
+
+[b]Technical details:[/b]
+
+Rotation drives sky_orientation/rotation (viewport environment handler), time-based so the rate is identical at any framerate.
+
+Shadow freeze captures the light's world rotation when rotation starts and counter-rotates its local rotation every frame. The visible sun moves with the sky; the shadow does not.
+
+[b]What is NOT possible:[/b]
+- Brightness / tint controls - material:set_variable() is a silent no-op; sky intensity key exists on only 23% of levels.
+- Cloud scrolling - no route to cloud materials found.
+- Whole-environment swapping - access-violates inside PackageManager:_script_data with BeardLib.
+
+[b]License:[/b]
+
+MIT - see LICENSE (https://github.com/ChickenAISLOP/skybox/blob/dev/LICENSE).

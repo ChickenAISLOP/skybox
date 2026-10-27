@@ -38,13 +38,13 @@ R._loaded = true
 
 R.KEY = Idstring("sky_orientation/rotation"):key()
 
--- settings, own namespace so it cannot collide with the texture settings
 R.enabled    = R.enabled == true
 R.speed      = R.speed or 4.0      -- degrees per second, any value, negative reverses
+R.locked     = R.locked == true    -- fixed horizontal angle instead of continuous rotation
 
--- runtime state
 R.angle      = nil        -- our own angle, so we never read every frame
 R.original   = nil        -- what the level had, for restore
+R.lock_angle = nil        -- captured when lock is turned on
 R.running    = false
 R.writes     = 0
 R.errors     = 0
@@ -156,6 +156,24 @@ function R.set_enabled(on)
 	R.save()
 end
 
+function R.set_locked(on)
+	R.locked = on == true
+	if R.locked then
+		local h = handler()
+		if h then
+			local ok, cur = pcall(function() return h:get_value(R.KEY) end)
+			if ok and type(cur) == "number" then
+				R.lock_angle = cur
+			end
+		end
+	end
+	R.save()
+	if R.enabled then
+		R.stop(false)
+		R.start()
+	end
+end
+
 -- ---------------------------------------------------------------------------
 -- persistence
 -- ---------------------------------------------------------------------------
@@ -169,8 +187,9 @@ R.SETTINGS_FILE = "sky_rotation_settings.json"
 function R.save()
 	local f = io.open(SavePath .. R.SETTINGS_FILE, "w")
 	if not f then return end
-	f:write(string.format('{"enabled":%s,"speed":%.3f}\n',
-		R.enabled and "true" or "false", R.speed))
+	f:write(string.format('{"enabled":%s,"speed":%.3f,"locked":%s}\n',
+		R.enabled and "true" or "false", R.speed,
+		R.locked and "true" or "false"))
 	f:close()
 end
 
@@ -184,6 +203,8 @@ function R.load()
 	if on then R.enabled = true end
 	local sp = body:match('"speed"%s*:%s*([%d%.%-]+)')
 	if sp then R.speed = tonumber(sp) or R.speed end
+	local lk = body:match('"locked"%s*:%s*(true)')
+	if lk then R.locked = true end
 end
 
 function R.set_speed(v)
@@ -234,18 +255,30 @@ local function step_impl(t, dt)
 	if dt > 0.1 then dt = 0.1 end
 	if dt < 0 then dt = 0 end
 
-	local speed = tonumber(R.speed) or 0
-	if speed == 0 then return end
-
-	R.angle = (R.angle + speed * dt) % 360
-	if R.angle < 0 then R.angle = R.angle + 360 end
-
 	local h = handler()
 	if not h then
 		-- Do not clear R.running here. The viewport is briefly absent during
 		-- loads; stopping permanently on a transient miss is what this fix is
 		-- about. The self-heal above will pick it back up.
 		return
+	end
+
+	if R.locked then
+		-- Fixed horizontal angle: capture once, hold every frame.
+		if R.lock_angle == nil then
+			local ok, cur = pcall(function() return h:get_value(R.KEY) end)
+			if ok and type(cur) == "number" then
+				R.lock_angle = cur
+			else
+				R.lock_angle = 0
+			end
+		end
+		R.angle = R.lock_angle
+	else
+		local speed = tonumber(R.speed) or 0
+		if speed == 0 then return end
+		R.angle = (R.angle + speed * dt) % 360
+		if R.angle < 0 then R.angle = R.angle + 360 end
 	end
 
 	local ok, err = pcall(function() return h:editor_set_value(R.KEY, R.angle) end)

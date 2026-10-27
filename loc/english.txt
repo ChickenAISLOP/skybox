@@ -35,6 +35,8 @@
 	"sa_rot_speed_title": "Rotation speed",
 	"sa_rot_toggle_desc": "Starts or stops the driver and shows the current status.",
 	"sa_rot_toggle_title": "Rotation status",
+	"sa_sky_locked_desc": "Freezes the sky at its current horizontal angle. Turn off to restore the level angle.",
+	"sa_sky_locked_title": "Lock Sky Horizontal",
 	"sa_rotation_tab_desc": "Rotate the sky continuously.",
 	"sa_rotation_tab_title": "Sky Animation",
 	"sa_skybox_tab_desc": "Global skybox and animation settings.",

@@ -42,7 +42,6 @@ local F = _G.shadow_freeze
 if F._loaded then return end
 F._loaded = true
 
--- Always on. The freeze is part of the rotation behaviour, not a user option.
 F.enabled = true
 F.light   = nil
 F.parent  = nil
@@ -63,9 +62,6 @@ local function note(s)
 	if f then f:write(os.date("[%Y-%m-%d %H:%M:%S] ") .. s .. "\n"); f:close() end
 end
 
--- CoreCode.alive is the game's own liveness check. If CoreCode is not present
--- in this Lua state, fall back to the non-nil check rather than skipping the
--- feature entirely.
 local function alive(obj)
 	if not obj then return false end
 	if CoreCode and CoreCode.alive then

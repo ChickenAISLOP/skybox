@@ -17,9 +17,10 @@ end
 function U.read_json(path)
 	local text = U.read(path)
 	if not text then return {} end
-	local ok, data = pcall(json.decode, text)
-	if ok and type(data) == "table" then return data end
-	return {}, true
+	if type(json) ~= "table" or type(json.decode) ~= "function" then return {} end
+	local data = json.decode(text)
+	if type(data) == "table" then return data end
+	return {}
 end
 
 function U.write_json(path, data)
@@ -30,10 +31,6 @@ function U.write_json(path, data)
 		return true
 	end
 	return false
-end
-
-function U.sanitize(name)
-	return (tostring(name):lower():gsub("[^%w_]", "_"))
 end
 
 -- Deep copy

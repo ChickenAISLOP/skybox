@@ -8,7 +8,6 @@ if L._loaded then
 end
 L._loaded = true
 
-dofile(ModPath .. "lua/util.lua")
 local U = _G.skybox_animated_util
 
 local NS = "units/mods/skybox_animated/"
@@ -58,9 +57,6 @@ end
 local function probe_dds(path)
 	local f = io.open(path, "rb")
 	if not f then return "missing", "missing" end
-	-- Read the header BEFORE seeking for the size. seek("end") leaves the cursor
-	-- at EOF, so reading afterwards returns nothing and every file would be
-	-- rejected as "not a DDS file".
 	local head = f:read(128)
 	local size = f:seek("end")
 	local parts = { tostring(size) }
@@ -103,21 +99,13 @@ local function cached_probe(path)
 	return sig, why
 end
 
-local function suffix(sig)
+local function register_texture(db_kind, file_path)
+	local sig = cached_probe(file_path)
 	local h = 5381
 	for i = 1, #sig do
 		h = (h * 33 + sig:byte(i)) % 4294967296
 	end
-	return ("%08x"):format(h)
-end
-
--- Registering a texture only creates the DB entry. It is deliberately NOT
--- queued for loading: uploading every skybox to the GPU while the player sits in
--- the main menu was the source of the menu lag. The selected skybox is loaded on
--- demand by ensure_texture_ready once a heist is actually running.
-local function register_texture(db_kind, file_path)
-	local sig = cached_probe(file_path)
-	local db = L.TEX_DB .. db_kind .. "_" .. suffix(sig)
+	local db = L.TEX_DB .. db_kind .. "_" .. ("%08x"):format(h)
 	register(IDS_TEXTURE, db, file_path)
 	return db
 end
@@ -125,28 +113,6 @@ end
 local function dds_problem(path)
 	local _, why = cached_probe(path)
 	return why
-end
-
-local function skybox_meta()
-	local meta = {}
-	for _, s in ipairs(U.read_json(VARIANTS_FILE).skyboxes or {}) do
-		if s.id then meta[s.id] = s end
-	end
-	return meta
-end
-
-local function make_skybox(id, meta, base, glow, cubemap)
-	local m = meta[id] or {}
-	return {
-		id = id,
-		name = m.name or id,
-		base = base,
-		glow = glow,
-		cubemap = cubemap,
-		rotation = m.rotation or { x = 0, y = 0, z = 0 },
-		uv_scroll = m.uv_scroll or { u = 0, v = 0 },
-		color = m.color,
-	}
 end
 
 local function scan_input()
@@ -168,7 +134,7 @@ local function scan_input()
 		local base, ext = f:match("^(.+)%.(%w+)$")
 		ext = ext and ext:lower()
 		if ext == "png" then
-			problem("input/dds/" .. f .. " ignored: convert it to DDS or PAYDAY .texture format first")
+			problem("input/dds/" .. f .. " ignored: PNGs are not used directly. Put game-ready DDS (DXT1/DXT5) or .texture files in input/dds/, or put PNGs in input/png/ and use Generate DDS from PNGs.")
 		end
 		if base and (ext == "dds" or ext == "texture") then
 			local tail = base:lower():sub(-3)
@@ -219,12 +185,14 @@ local function register_input(ids_out)
 end
 
 function L.skyboxes()
+	L.ensure_scanned()
 	return L.skybox_list
 end
 
 -- O(1) lookup for the per-frame texture path. The old linear scan ran on every
 -- GameSetupUpdate tick; this map is rebuilt whenever the folder is rescanned.
 function L.get(id)
+	L.ensure_scanned()
 	return id and L.by_id[id] or nil
 end
 
@@ -253,17 +221,27 @@ function L.ensure_texture_ready(db_path)
 end
 
 function L.rescan()
-	-- Drop cached probes so regenerated DDS files are picked up.
 	probe_cache = {}
 	local textures = {}
-	-- This mod is intentionally limited to input/dds/ and its generated/ child.
-	-- Do not expose or generate configs for the game's bundled sky textures.
 	register_input(textures)
 
-	local meta = skybox_meta()
+	local meta = {}
+	for _, s in ipairs(U.read_json(VARIANTS_FILE).skyboxes or {}) do
+		if s.id then meta[s.id] = s end
+	end
 	local list = {}
 	for id, t in pairs(textures) do
-		list[#list + 1] = make_skybox(id, meta, t.base, t.glow, t.cubemap)
+		local m = meta[id] or {}
+		list[#list + 1] = {
+			id = id,
+			name = m.name or id,
+			base = t.base,
+			glow = t.glow,
+			cubemap = t.cubemap,
+			rotation = m.rotation or { x = 0, y = 0, z = 0 },
+			uv_scroll = m.uv_scroll or { u = 0, v = 0 },
+			color = m.color,
+		}
 	end
 	table.sort(list, function(a, b) return a.id < b.id end)
 	L.skybox_list = list
@@ -271,19 +249,9 @@ function L.rescan()
 	for _, s in ipairs(list) do L.by_id[s.id] = s end
 	log("[skybox_animated] rescan " .. #L.skybox_list .. " skyboxes")
 
-	-- Material configs were removed: Underlay does not expose
-	-- Unit:set_material_config, so the engine rejected every generated config
-	-- and the work was dead. Textures are applied directly instead.
-	-- Deliberately no start_loading() here: the scan only registers DB entries so
-	-- the menu lists are populated. Textures load on demand inside a heist via
-	-- ensure_texture_ready, which keeps the main menu free of GPU uploads.
 	L._scanned = true
 end
 
--- Scanning is done once at load. The menu builds skybox choice lists from this
--- data, so it must be populated before any menu is built; deferring it left the
--- lists empty and crashed the multiple-choice item. It is cheap now that the
--- animation frames are gone (only the static DDS files are probed).
 L._scanned = false
 
 function L.ensure_scanned()
@@ -292,9 +260,4 @@ function L.ensure_scanned()
 	L.rescan()
 end
 
--- Scan at load so the skybox choice lists are populated before any menu builds.
-L.ensure_scanned()
 
-Hooks:Add("MenuManagerOnOpenMenu", "skybox_animated_scan_for_menu", function(menu_manager, menu_name)
-	if menu_name == "skybox_animated_options" then L.ensure_scanned() end
-end)
